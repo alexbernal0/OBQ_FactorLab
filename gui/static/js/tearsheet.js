@@ -269,3 +269,202 @@ function buildAnnualTable(ann, nq) {
   wrap.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:10px;font-family:'Segoe UI',sans-serif"><thead style="background:#f8f9fa;color:#6b7280;font-size:8px;font-weight:700;text-transform:uppercase">${th}</thead><tbody>${rows}</tbody></table>`;
   return wrap;
 }
+
+// ── Rolling Sharpe + Sortino combined ────────────────────────────────────────
+function drawRollingCombined(divId, dates, equity) {
+  if (!dates?.length || !equity?.length) return;
+  const W=12, rets=equity.slice(1).map((v,i)=>v/(equity[i]||1)-1);
+  const rs=[], rso=[];
+  for (let i=0;i<rets.length;i++) {
+    if (i<W-1) { rs.push(null); rso.push(null); continue; }
+    const w=rets.slice(i-W+1,i+1);
+    const mu=w.reduce((a,b)=>a+b,0)/W;
+    const sd=Math.sqrt(w.reduce((s,v)=>s+(v-mu)**2,0)/W);
+    rs.push(sd>0?+(mu/sd*Math.sqrt(12)).toFixed(3):null);
+    const dn=w.filter(v=>v<0); const ds=dn.length>0?Math.sqrt(dn.reduce((s,v)=>s+v*v,0)/dn.length):0;
+    rso.push(ds>0?+(mu/ds*Math.sqrt(12)).toFixed(3):null);
+  }
+  const x=dates.slice(1).map(d=>String(d).slice(0,7));
+  Plotly.newPlot(divId,[
+    {x,y:rs, type:"scatter",mode:"lines",name:"Rolling Sharpe", line:{color:"#0066cc",width:1.5}},
+    {x,y:rso,type:"scatter",mode:"lines",name:"Rolling Sortino",line:{color:"#f59e0b",width:1.2,dash:"dash"}},
+    {x:[x[0],x[x.length-1]],y:[0,0],type:"scatter",mode:"lines",line:{color:"#9ca3af",width:1,dash:"dot"},showlegend:false},
+  ],_L({margin:{l:44,r:8,t:6,b:36},yaxis:{...PLOT_LAYOUT.yaxis,title:{text:"Ratio",font:{size:8}}}}),PLOT_CFG);
+}
+
+// ── Rolling Max Drawdown ─────────────────────────────────────────────────────
+function drawRollingMaxDD(divId, dates, equity) {
+  if (!dates?.length || !equity?.length) return;
+  const W=12, rets=equity.slice(1).map((v,i)=>v/(equity[i]||1)-1);
+  const rmdd=rets.map((_,i)=>{
+    if(i<W-1) return null;
+    const w=rets.slice(i-W+1,i+1);
+    let eq=1, peak=1, mdd=0;
+    w.forEach(r=>{eq*=(1+r);peak=Math.max(peak,eq);mdd=Math.min(mdd,(eq/peak-1)*100);});
+    return +mdd.toFixed(2);
+  });
+  const x=dates.slice(1).map(d=>String(d).slice(0,7));
+  Plotly.newPlot(divId,[
+    {x,y:rmdd,type:"scatter",mode:"lines",name:"Rolling Max DD",
+     line:{color:"#dc2626",width:1},fill:"tozeroy",fillcolor:"rgba(220,38,38,0.2)"},
+  ],_L({margin:{l:44,r:8,t:6,b:36},yaxis:{...PLOT_LAYOUT.yaxis,ticksuffix:"%",title:{text:"Max DD %",font:{size:8}}}}),PLOT_CFG);
+}
+
+// ── Omega Ratio Curve ────────────────────────────────────────────────────────
+function drawOmegaCurve(divId, monthlyRets) {
+  if (!monthlyRets?.length) return;
+  const vals=monthlyRets.map(v=>v*100);
+  const thresholds=Array.from({length:61},(_,i)=>-3+i*0.1);
+  const omega=thresholds.map(thr=>{
+    let g=0,l=0; vals.forEach(v=>{const e=v-thr; if(e>0)g+=e; else l+=Math.abs(e);});
+    return l>0?+(g/l).toFixed(4):null;
+  });
+  Plotly.newPlot(divId,[
+    {x:thresholds,y:omega,type:"scatter",mode:"lines",name:"Omega",line:{color:"#0066cc",width:1.5}},
+    {x:[-3,3],y:[1,1],type:"scatter",mode:"lines",name:"Omega=1",line:{color:"#dc2626",width:1,dash:"dash"},showlegend:true},
+    {x:[0,0],y:[0,8],type:"scatter",mode:"lines",name:"Thr=0",line:{color:"#9ca3af",width:1,dash:"dot"},showlegend:false},
+  ],_L({
+    margin:{l:44,r:8,t:6,b:36},
+    yaxis:{...PLOT_LAYOUT.yaxis,range:[0,8],title:{text:"Omega Ratio",font:{size:8}}},
+    xaxis:{...PLOT_LAYOUT.xaxis,ticksuffix:"%",title:{text:"Threshold (%)",font:{size:8}}},
+  }),PLOT_CFG);
+}
+
+// ── ACF / PACF ───────────────────────────────────────────────────────────────
+function drawACF(divId, monthlyRets, isPartial) {
+  if (!monthlyRets?.length) return;
+  const vals=monthlyRets.map(v=>v*100);
+  const n=vals.length, nlags=Math.min(24,Math.floor(n/2));
+  const mean=vals.reduce((a,b)=>a+b,0)/n;
+  const d=vals.map(v=>v-mean);
+  const c0=d.reduce((s,v)=>s+v*v,0)/n;
+  const acfVals=[];
+  for (let lag=1;lag<=nlags;lag++){
+    let ck=0; for(let i=0;i<n-lag;i++) ck+=d[i]*d[i+lag];
+    acfVals.push(c0>0?(ck/n)/c0:0);
+  }
+  let plotVals=acfVals;
+  if (isPartial) {
+    // Durbin-Levinson approximation
+    const pacf=[acfVals[0]];
+    let prev=[acfVals[0]];
+    for(let k=1;k<nlags;k++){
+      const num=acfVals[k]-prev.reduce((s,p,j)=>s+p*acfVals[k-j-2]||0,0);
+      const den=1-prev.reduce((s,p,j)=>s+p*acfVals[j],0);
+      const phi=den!==0?num/den:0;
+      pacf.push(isFinite(phi)?+phi.toFixed(4):0);
+      prev=[...Array(k+1)].map((_,j)=>j<k?prev[j]-phi*prev[k-1-j]:phi);
+    }
+    plotVals=pacf;
+  }
+  const lags=Array.from({length:nlags},(_,i)=>i+1);
+  const ci=1.96/Math.sqrt(n);
+  Plotly.newPlot(divId,[
+    {x:lags,y:plotVals,type:"bar",name:isPartial?"PACF":"ACF",
+     marker:{color:plotVals.map(v=>v>=0?"rgba(0,102,204,0.7)":"rgba(220,38,38,0.7)")}},
+    {x:[1,nlags],y:[ci,ci],type:"scatter",mode:"lines",line:{color:"#9ca3af",width:1,dash:"dash"},showlegend:false},
+    {x:[1,nlags],y:[-ci,-ci],type:"scatter",mode:"lines",line:{color:"#9ca3af",width:1,dash:"dash"},showlegend:false},
+  ],_L({
+    margin:{l:44,r:8,t:6,b:36},showlegend:false,
+    xaxis:{...PLOT_LAYOUT.xaxis,title:{text:"Lag (months)",font:{size:8}}},
+    yaxis:{...PLOT_LAYOUT.yaxis,title:{text:isPartial?"Partial ACF":"ACF",font:{size:8}}},
+  }),PLOT_CFG);
+}
+
+// ── Monthly Active Returns ───────────────────────────────────────────────────
+function drawActiveReturns(divId, dates, equity, bmEquity) {
+  if (!dates?.length || !equity?.length || !bmEquity?.length) return;
+  // Build monthly returns from equity arrays
+  const mRets=[],mBm=[],mLabels=[];
+  for(let i=1;i<equity.length;i++){
+    mRets.push(equity[i]/equity[i-1]-1);
+    mBm.push(bmEquity[i]?bmEquity[i]/bmEquity[i-1]-1:0);
+    mLabels.push(String(dates[i]).slice(0,7));
+  }
+  const active=mRets.map((r,i)=>+((r-mBm[i])*100).toFixed(3));
+  Plotly.newPlot(divId,[
+    {x:mLabels,y:active,type:"bar",name:"Active Return",
+     marker:{color:active.map(v=>v>=0?"rgba(22,163,74,0.7)":"rgba(220,38,38,0.7)")}},
+  ],_L({
+    margin:{l:44,r:8,t:6,b:36},showlegend:false,
+    yaxis:{...PLOT_LAYOUT.yaxis,ticksuffix:"%",title:{text:"Active Ret %",font:{size:8}}},
+  }),PLOT_CFG);
+}
+
+// ── Best/Worst months table ──────────────────────────────────────────────────
+function buildBestWorstTable(dates, equity, topN) {
+  topN=topN||5;
+  if(!dates?.length||!equity?.length) return document.createElement("div");
+  const months=[];
+  for(let i=1;i<equity.length;i++){
+    months.push({label:String(dates[i]).slice(0,7), ret:+((equity[i]/equity[i-1]-1)*100).toFixed(2)});
+  }
+  months.sort((a,b)=>b.ret-a.ret);
+  const best=months.slice(0,topN), worst=months.slice(-topN).reverse();
+  const wrap=document.createElement("div");
+  wrap.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 12px";
+  const buildHalf=(title,rows,color)=>{
+    let html=`<div><div style="font-size:8px;font-weight:700;color:${color};letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">${title}</div><table style="width:100%;border-collapse:collapse;font-size:9px">`;
+    rows.forEach((r,i)=>{ html+=`<tr style="background:${i%2?"#f9fafb":"#fff"}"><td style="padding:3px 6px;color:#374151">${r.label}</td><td style="padding:3px 6px;text-align:right;font-weight:700;color:${color}">${r.ret>0?"+":""}${r.ret}%</td></tr>`; });
+    html+="</table></div>";
+    const d=document.createElement("div"); d.innerHTML=html; return d;
+  };
+  wrap.appendChild(buildHalf("TOP 5 BEST MONTHS",best,"#15803d"));
+  wrap.appendChild(buildHalf("TOP 5 WORST MONTHS",worst,"#b91c1c"));
+  return wrap;
+}
+
+// ── Crisis Periods 2x4 Grid ──────────────────────────────────────────────────
+const CRISIS_PERIODS=[
+  {name:"Dot-Com Crash",  start:"2000-03-24",end:"2002-10-09"},
+  {name:"9/11 Aftermath", start:"2001-09-10",end:"2001-09-21"},
+  {name:"GFC",            start:"2007-10-09",end:"2009-03-09"},
+  {name:"European Debt",  start:"2011-05-02",end:"2011-10-04"},
+  {name:"2015-16 Corr.",  start:"2015-08-10",end:"2016-02-11"},
+  {name:"Volmageddon",    start:"2018-01-26",end:"2018-02-09"},
+  {name:"COVID-19",       start:"2020-02-20",end:"2020-03-23"},
+  {name:"2022 Rate Hike", start:"2022-01-03",end:"2022-05-16"},
+];
+
+function drawCrisisGrid(containerId, dates, equity) {
+  const container=document.getElementById(containerId);
+  if(!container||!dates?.length||!equity?.length) return;
+  const dStr=dates.map(d=>String(d).slice(0,10));
+  CRISIS_PERIODS.forEach((c,idx)=>{
+    const cell=document.createElement("div");
+    cell.style.cssText="background:#fff;border:1px solid #e5e7eb;border-radius:3px;padding:6px;overflow:hidden";
+    const title=document.createElement("div");
+    title.style.cssText="font-size:8px;font-weight:700;color:#374151;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+    title.textContent=c.name; cell.appendChild(title);
+    // Filter to crisis window
+    const si=dStr.findIndex(d=>d>=c.start);
+    const ei=dStr.findIndex(d=>d>c.end);
+    const endIdx=ei===-1?dStr.length:ei;
+    if(si===-1||endIdx<=si){
+      const na=document.createElement("div");
+      na.style.cssText="font-size:9px;color:#9ca3af;padding:20px 0;text-align:center";
+      na.textContent="N/A — No history"; cell.appendChild(na);
+    } else {
+      const sliceEq=equity.slice(si,endIdx);
+      const sliceDt=dStr.slice(si,endIdx);
+      const base=sliceEq[0]||1;
+      const norm=sliceEq.map(v=>+((v/base*100)).toFixed(2));
+      const divId="crisis_"+idx+"_"+containerId;
+      const d=document.createElement("div"); d.id=divId; d.style.cssText="height:100px;width:100%";
+      cell.appendChild(d);
+      const col=norm[norm.length-1]>=100?"#0066cc":"#dc2626";
+      Plotly.newPlot(divId,[
+        {x:sliceDt,y:norm,type:"scatter",mode:"lines",line:{color:col,width:1.2},showlegend:false},
+        {x:[sliceDt[0],sliceDt[sliceDt.length-1]],y:[100,100],type:"scatter",mode:"lines",
+         line:{color:"#9ca3af",width:0.8,dash:"dot"},showlegend:false},
+      ],{
+        paper_bgcolor:"#fff",plot_bgcolor:"#fff",
+        margin:{l:28,r:4,t:2,b:24},
+        xaxis:{gridcolor:"#f3f4f6",tickfont:{size:6},tickcolor:"#9ca3af",nticks:3},
+        yaxis:{gridcolor:"#f3f4f6",tickfont:{size:6},tickcolor:"#9ca3af",ticksuffix:""},
+        hovermode:false,
+      },{displayModeBar:false,responsive:true});
+    }
+    container.appendChild(cell);
+  });
+}

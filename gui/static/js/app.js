@@ -332,7 +332,10 @@ function _renderTearsheet(run_id) {
   const csvBtn = el("button","btn-pdf");
   csvBtn.style.background = "#16a34a";
   csvBtn.textContent = "CSV"; csvBtn.onclick = () => exportCSV(run);
-  btnWrap.append(csvBtn, pdfBtn);
+  const imgBtn = el("button","btn-pdf");
+  imgBtn.style.background = "#7c3aed";
+  imgBtn.textContent = "IMG"; imgBtn.onclick = () => exportImage(run);
+  btnWrap.append(imgBtn, csvBtn, pdfBtn);
   hdr.append(hdrL, btnWrap);
   content.appendChild(hdr);
 
@@ -383,27 +386,68 @@ function _renderTearsheet(run_id) {
     annRow.appendChild(annBox); annId = id;
   }
 
-  // ── 6. ROLLING METRICS (Sharpe + Sortino + Vol) ────────────────────────────
-  sec("ROLLING METRICS");
+  // ── 6. ROLLING RISK METRICS (4 charts in 2x2) ─────────────────────────────
+  sec("ROLLING RISK METRICS");
   const rRow = el("div","ts-charts"); content.appendChild(rRow);
-  const {box:rsBox, id:rsId} = pBox("ROLLING 12-MO SHARPE", 180);
-  rRow.appendChild(rsBox);
-  const {box:rstBox, id:rstId} = pBox("ROLLING 12-MO SORTINO", 180);
-  rRow.appendChild(rstBox);
+  const {box:rcBox, id:rcId} = pBox("ROLLING SHARPE & SORTINO", 180);
+  rRow.appendChild(rcBox);
+  const {box:rmdBox, id:rmdId} = pBox("ROLLING MAX DRAWDOWN", 180);
+  rRow.appendChild(rmdBox);
 
-  sec("ROLLING VOLATILITY & DISTRIBUTION");
   const rRow2 = el("div","ts-charts"); content.appendChild(rRow2);
-  const {box:rvBox, id:rvId} = pBox("ROLLING 12-MO VOLATILITY", 180);
+  const {box:rvBox, id:rvId} = pBox("ROLLING ANNUALIZED VOLATILITY", 180);
   rRow2.appendChild(rvBox);
-  let distId = null;
+  const {box:rsBox, id:rsId} = pBox("ROLLING 12-MO SHARPE (solo)", 180);
+  rRow2.appendChild(rsBox);
+
+  // ── 6b. DISTRIBUTION ANALYSIS ──────────────────────────────────────────────
+  // Extract monthly returns from period_data OR equity curve
+  let _monthlyRets = null;
   if (result.period_data?.length) {
-    const monthlyRets = result.period_data.map(d => d.portfolio_return || 0);
-    const {box:dBox, id:dId} = pBox("MONTHLY RETURN DISTRIBUTION", 180);
-    rRow2.appendChild(dBox); distId = dId;
-    rRow2._monthlyRets = monthlyRets;
+    _monthlyRets = result.period_data.map(d => d.portfolio_return || 0);
+  } else if (equity.length > 1) {
+    _monthlyRets = equity.slice(1).map((v,i) => v/(equity[i]||1)-1);
   }
 
-  // 6b. DRAWDOWN DEEP DIVE TABLE
+  let distId=null, omegaId=null, acfId=null, pacfId=null;
+  if (_monthlyRets) {
+    sec("RETURN DISTRIBUTION ANALYSIS");
+    const dRow1 = el("div","ts-charts"); content.appendChild(dRow1);
+    const {box:dBox, id:dId} = pBox("MONTHLY RETURN DISTRIBUTION", 180);
+    dRow1.appendChild(dBox); distId = dId;
+    const {box:oBox, id:oId} = pBox("OMEGA RATIO CURVE", 180);
+    dRow1.appendChild(oBox); omegaId = oId;
+
+    const dRow2 = el("div","ts-charts"); content.appendChild(dRow2);
+    const {box:aBox, id:aId} = pBox("ACF — MONTHLY RETURNS", 180);
+    dRow2.appendChild(aBox); acfId = aId;
+    const {box:pBox2, id:pId} = pBox("PACF — MONTHLY RETURNS", 180);
+    dRow2.appendChild(pBox2); pacfId = pId;
+  }
+
+  // ── 6c. ACTIVE RETURNS + BEST/WORST ───────────────────────────────────────
+  let activeId=null;
+  const bmEq = result.bm_equity || [];
+  if (bmEq.length > 1 && equity.length > 1) {
+    sec("ACTIVE RETURNS & BEST / WORST MONTHS");
+    const aRow = el("div","ts-charts wide"); content.appendChild(aRow);
+    const {box:arBox, id:arId} = pBox("MONTHLY ACTIVE RETURNS (Strategy - Benchmark)", 180, true);
+    aRow.appendChild(arBox); activeId = arId;
+
+    const bwWrap = el("div"); bwWrap.style.cssText = "flex-shrink:0";
+    bwWrap.appendChild(buildBestWorstTable(dates, equity, 5));
+    content.appendChild(bwWrap);
+  }
+
+  // ── 6d. CRISIS PERIODS 2x4 GRID ───────────────────────────────────────────
+  sec("CRISIS PERIODS ANALYSIS");
+  const crisisGrid = el("div");
+  crisisGrid.id = uid();
+  crisisGrid.style.cssText = "display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 12px;flex-shrink:0";
+  content.appendChild(crisisGrid);
+  const crisisId = crisisGrid.id;
+
+  // ── 6e. DRAWDOWN TABLE ─────────────────────────────────────────────────────
   if (dates.length > 0 && equity.length > 0) {
     sec("DRAWDOWN ANALYSIS - TOP PERIODS");
     const ddWrap = el("div"); ddWrap.style.cssText = "padding:8px 12px;flex-shrink:0";
@@ -545,17 +589,47 @@ function _renderTearsheet(run_id) {
 
   // ── Draw all Plotly charts after DOM is rendered ───────────────────────────
   setTimeout(() => {
+    // Equity + Drawdown joined
     try { drawEquityWithDD(eqId, dates, equity); } catch(e) { console.error("equity+dd",e); }
+    // Annual bars
     if (annId && result.annual_ret_by_year?.length)
-      try { drawAnnualBars(annId, result.annual_ret_by_year); } catch(e) { console.error("ann",e); }
-    try { drawRollingSharpe(rsId, dates, equity); } catch(e) { console.error("rs",e); }
-    try { drawRollingSortino(rstId, dates, equity); } catch(e) { console.error("rst",e); }
+      try { drawAnnualBars(annId, result.annual_ret_by_year); } catch(e) {}
+    // Rolling combined + max DD + vol + solo sharpe
+    try { drawRollingCombined(rcId, dates, equity); } catch(e) { console.error("rc",e); }
+    try { drawRollingMaxDD(rmdId, dates, equity); } catch(e) { console.error("rmd",e); }
     try { drawRollingVol(rvId, dates, equity); } catch(e) { console.error("rv",e); }
-    if (distId && rRow2._monthlyRets)
-      try { drawDistribution(distId, rRow2._monthlyRets); } catch(e) { console.error("dist",e); }
+    try { drawRollingSharpe(rsId, dates, equity); } catch(e) { console.error("rs",e); }
+    // Distribution analysis
+    if (_monthlyRets) {
+      if (distId)   try { drawDistribution(distId, _monthlyRets); } catch(e) { console.error("dist",e); }
+      if (omegaId)  try { drawOmegaCurve(omegaId, _monthlyRets); } catch(e) { console.error("omega",e); }
+      if (acfId)    try { drawACF(acfId, _monthlyRets, false); } catch(e) { console.error("acf",e); }
+      if (pacfId)   try { drawACF(pacfId, _monthlyRets, true); } catch(e) { console.error("pacf",e); }
+    }
+    // Active returns vs benchmark
+    if (activeId && bmEq.length > 1)
+      try { drawActiveReturns(activeId, dates, equity, bmEq); } catch(e) { console.error("active",e); }
+    // Crisis grid
+    try { drawCrisisGrid(crisisId, dates, equity); } catch(e) { console.error("crisis",e); }
+    // Quintile-specific
     if (scId) try { drawSectorBar(scId, result.sector_analysis); } catch(e) {}
     if (icId2) try { drawIC(icId2, result.ic_data); } catch(e) {}
   }, 50);
+}
+
+// ── Image export (hi-res screenshot of tearsheet panel) ──────────────────
+async function exportImage(run) {
+  const btn = document.querySelector(".btn-pdf[style*='7c3aed']");
+  if (btn) { btn.textContent = "..."; btn.disabled = true; }
+  // Use Plotly's toImage on all charts in ts-content + html2canvas fallback via server snap
+  const resp = await fetch("/api/export/image", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ run_label: run.run_label }),
+  }).then(r=>r.json()).catch(e=>({error:String(e)}));
+  if (btn) { btn.textContent = "IMG"; btn.disabled = false; }
+  if (resp.path) showToast("Image saved to Downloads: " + resp.filename, "success");
+  else showToast("Image failed: "+(resp.error||"unknown"), "error");
 }
 
 // ── CSV export ────────────────────────────────────────────────────────────

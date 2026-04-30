@@ -249,6 +249,63 @@ def evaljs():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/export/image", methods=["POST"])
+def export_image():
+    """Capture the tearsheet panel as a hi-res PNG using PIL screenshot, crop to ts-panel."""
+    import datetime as _dt, pathlib as _pl, base64 as _b64, io as _io
+    data = request.get_json(force=True) or {}
+    run_label = data.get("run_label", "tearsheet")
+
+    ts   = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in run_label)[:40]
+    fname = f"OBQ_FactorLab_{safe}_{ts}.png"
+    path  = _pl.Path.home() / "Downloads" / fname
+
+    try:
+        import PIL.ImageGrab
+        # Take full screenshot
+        img = PIL.ImageGrab.grab()
+
+        # Try to get ts-panel bounds via evaljs
+        win = getattr(__import__('__main__'), '_webview_window', None)
+        cropped = img
+        if win:
+            try:
+                bounds_js = """(function(){
+                  var p = document.getElementById('ts-panel');
+                  if (!p) return null;
+                  var r = p.getBoundingClientRect();
+                  return JSON.stringify({x:Math.round(r.left),y:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height)});
+                })()"""
+                result = win.evaluate_js(bounds_js)
+                import json as _json
+                if result:
+                    b = _json.loads(result)
+                    # Get window position to offset
+                    import ctypes
+                    user32 = ctypes.windll.user32
+                    # Scale factor
+                    scale = img.width / user32.GetSystemMetrics(0)
+                    # Find the window — use webview window handle
+                    # Crop: add window chrome offset (~30px top for title bar)
+                    chrome_top = 30
+                    left  = int(b['x'] * scale)
+                    top   = int((b['y'] + chrome_top) * scale)
+                    right = int((b['x'] + b['w']) * scale)
+                    bot   = int((b['y'] + b['h'] + chrome_top) * scale)
+                    if right > left and bot > top:
+                        cropped = img.crop((left, top, right, bot))
+            except Exception:
+                pass  # fallback to full screenshot
+
+        # Save at full resolution (no downscaling — hi-res)
+        cropped.save(str(path), "PNG", optimize=False)
+        return jsonify({"path": str(path), "filename": fname})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/export/csv", methods=["POST"])
 def export_csv():
     """Export tearsheet metrics to CSV in Downloads folder."""
