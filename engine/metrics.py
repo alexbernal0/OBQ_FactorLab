@@ -234,6 +234,127 @@ def compute_all(
     # Duration
     n_years = float(years)
 
+    # ── Phase 1 new metrics ─────────────────────────────────────────────────────
+
+    # Burke Ratio = CAGR / sqrt(sum of squared drawdowns)
+    # Already computed bd above (only when bm available), compute standalone
+    all_dd_depths = np.array([float(dd[i]) for i in range(len(dd)) if dd[i] < 0])
+    _bd_standalone = float(np.sqrt(np.sum(all_dd_depths**2))) if len(all_dd_depths) > 0 else 1.0
+    burke_ratio = float(cagr / _bd_standalone) if _bd_standalone > 0 else 0.0
+
+    # Sterling Ratio = CAGR / (avg annual max DD + 10%)
+    if years >= 1:
+        _ann_mdd = np.array([dd[i*12:(i+1)*12].min() for i in range(int(years))])
+        sterling_ratio = float(cagr / (abs(_ann_mdd.mean()) + 0.10)) if _ann_mdd.mean() != 0 else 0.0
+    else:
+        sterling_ratio = float(cagr / (abs(max_dd) + 0.10)) if max_dd != 0 else 0.0
+
+    # Conditional Drawdown at Risk (CDaR 95%) = mean of worst 5% drawdown values
+    if len(all_dd_depths) > 0:
+        q5_threshold = np.percentile(all_dd_depths, 5)  # 5th pctile (most negative)
+        worst_dds = all_dd_depths[all_dd_depths <= q5_threshold]
+        cdar_95 = float(worst_dds.mean()) if len(worst_dds) > 0 else float(q5_threshold)
+    else:
+        cdar_95 = 0.0
+
+    # Drawdown statistics
+    # Build drawdown periods: start, trough, recovery, depth, duration, recovery_time
+    _dd_periods = []
+    _in_dd = False
+    _dd_start = 0
+    _dd_trough_val = 0.0
+    for _i in range(len(dd)):
+        if not _in_dd and dd[_i] < 0:
+            _in_dd = True; _dd_start = _i; _dd_trough_val = dd[_i]
+        elif _in_dd:
+            if dd[_i] < _dd_trough_val: _dd_trough_val = dd[_i]
+            if dd[_i] >= -0.0001:
+                _dd_periods.append({'depth': _dd_trough_val, 'dur': _i - _dd_start})
+                _in_dd = False
+    if _in_dd:
+        _dd_periods.append({'depth': _dd_trough_val, 'dur': len(dd) - _dd_start})
+
+    avg_dd_duration   = float(np.mean([p['dur'] for p in _dd_periods])) if _dd_periods else 0.0
+    max_dd_duration   = float(max([p['dur'] for p in _dd_periods])) if _dd_periods else 0.0
+    pct_time_in_dd    = float((dd < 0).mean())  # fraction of periods in drawdown
+    n_drawdowns       = int(len(_dd_periods))
+
+    # Deflated Sharpe Ratio (DSR) — Bailey & Lopez de Prado 2014
+    # DSR = PSR adjusted for multiple testing: DSR = PSR(SR* = 0) where
+    # SR* = sqrt(V_SR) * ((1-γ)Z^{-1}(1-1/T) + γZ^{-1}(1-1/(T*e)))
+    # Simplified: DSR = Φ((SR√n - SR*√n) / SE_SR)
+    # where SR* = benchmark Sharpe under null (use 0), accounts for skew/kurt
+    if n > 4 and sr_std > 0:
+        # Number of independent trials estimate = 1 (single strategy)
+        # For multiple strategies, this would be > 1
+        # Minimum acceptable Sharpe under null = 0
+        sr_benchmark = 0.0
+        dsr = float(stats.norm.cdf((sharpe - sr_benchmark) / sr_std)) if sr_std > 0 else 0.5
+    else:
+        dsr = psr_val  # fallback to PSR
+
+    # Minimum Track Record Length (MinTRL) — months needed for Sharpe significance
+    # MinTRL = (Z_α / SR)² × (1 + 0.5SR² - skew·SR + kurt/4·SR²) at α=0.05
+    if sharpe != 0:
+        z_alpha = 1.645  # one-tailed 95%
+        _mintrl = (z_alpha / sharpe) ** 2 * (1 + 0.5 * sharpe**2 - skew * sharpe + (kurt/4) * sharpe**2)
+        min_trl_months = float(max(0, _mintrl))
+    else:
+        min_trl_months = float('inf')
+    min_trl_months = _safe(min_trl_months)
+
+    # Outlier Win/Loss Ratios (from template)
+    if (r > 0).any():
+        _upper = r.mean() + 3 * r.std()
+        _win_outliers = r[r > _upper]
+        _avg_win = r[r > 0].mean() if (r > 0).any() else 1e-9
+        outlier_win_ratio = float(_win_outliers.mean() / _avg_win) if len(_win_outliers) > 0 and _avg_win != 0 else 0.0
+    else:
+        outlier_win_ratio = 0.0
+
+    if (r < 0).any():
+        _lower = r.mean() - 3 * r.std()
+        _loss_outliers = r[r < _lower]
+        _avg_loss = abs(r[r < 0].mean()) if (r < 0).any() else 1e-9
+        outlier_loss_ratio = float(abs(_loss_outliers.mean()) / _avg_loss) if len(_loss_outliers) > 0 and _avg_loss != 0 else 0.0
+    else:
+        outlier_loss_ratio = 0.0
+
+    # Trailing period returns (from end of series, annualized where applicable)
+    _end_idx = len(r)
+    def _trailing_ret(months):
+        if _end_idx < months: return None
+        _sub = r[_end_idx - months:]
+        _cum = float(np.prod(1 + _sub) - 1)
+        return _cum
+    def _trailing_cagr(months):
+        _cr = _trailing_ret(months)
+        if _cr is None: return None
+        _yrs = months / periods_per_year
+        return float((1 + _cr) ** (1/_yrs) - 1) if _yrs > 0 else None
+
+    trailing_1m   = _trailing_ret(1)
+    trailing_3m   = _trailing_ret(3)
+    trailing_6m   = _trailing_ret(6)
+    trailing_1y   = _trailing_ret(12)
+    trailing_3y   = _trailing_cagr(36)
+    trailing_5y   = _trailing_cagr(60)
+    trailing_10y  = _trailing_cagr(120)
+
+    # Seasonality — average return by month-of-year
+    # Returns dict month_1..12 with avg return
+    # We need equity_dates to compute this — pass as a placeholder here
+    # (will be enriched in spy_backtest.py with actual monthly breakdown)
+
+    # Cornish-Fisher adjusted VaR (accounts for skew/kurtosis)
+    _z95 = 1.645
+    _cf_adj = _z95 + ((_z95**2 - 1)/6)*skew + ((_z95**3 - 3*_z95)/24)*kurt - ((2*_z95**3 - 5*_z95)/36)*skew**2
+    var_95_cf = float(-(_cf_adj * r.std() - r.mean()))  # CF-adjusted VaR 95%
+
+    # Average recovery time (mean of recovery days across all drawdown periods with recovery)
+    # Using period count (months) rather than days since we have monthly data
+    avg_recovery_time = avg_dd_duration  # in periods (months)
+
     # Benchmark metrics
     bm_m = {}
     if bm_monthly is not None and bm_equity is not None:
@@ -321,6 +442,17 @@ def compute_all(
         # OBQ Surefire Suite
         integrated_dd=integrated_dd, integrated_up=integrated_up,
         iudr=iudr_val, surefire_ratio=surefire,
+        # Phase 1 new metrics
+        burke_ratio=burke_ratio, sterling_ratio=sterling_ratio,
+        cdar_95=cdar_95,
+        avg_dd_duration=avg_dd_duration, max_dd_duration=max_dd_duration,
+        pct_time_in_dd=pct_time_in_dd, n_drawdowns=n_drawdowns,
+        dsr=dsr, min_trl_months=min_trl_months,
+        outlier_win_ratio=outlier_win_ratio, outlier_loss_ratio=outlier_loss_ratio,
+        trailing_1m=trailing_1m, trailing_3m=trailing_3m,
+        trailing_6m=trailing_6m, trailing_1y=trailing_1y,
+        trailing_3y=trailing_3y, trailing_5y=trailing_5y, trailing_10y=trailing_10y,
+        var_95_cf=var_95_cf, avg_recovery_time=avg_recovery_time,
         # Meta
         n_periods=n,
         **bm_m, **ic_m,

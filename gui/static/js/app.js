@@ -434,7 +434,63 @@ function _renderTearsheet(run_id) {
     dRow2.appendChild(pBox2); pacfId = pId;
   }
 
-  // ── 6c. ACTIVE RETURNS + BEST/WORST ───────────────────────────────────────
+  // ── 6c. NEW PHASE 1 SECTIONS ──────────────────────────────────────────────
+
+  // Trailing returns bar chart
+  sec("TRAILING PERIOD RETURNS");
+  const trRow = el("div","ts-charts wide"); content.appendChild(trRow);
+  const {box:trBox, id:trId} = pBox("", 160, true);
+  trRow.appendChild(trBox);
+
+  // Benchmark comparison 2x2 (only when real benchmark)
+  let bmCmpId=null, capId=null, scatterId=null, annVsBmId=null;
+  const bmEq = result.bm_equity || [];
+  const hasDiffBenchmark = bmEq.length > 1 && equity.length > 1 &&
+    bmEq[bmEq.length-1] !== equity[equity.length-1];
+  if (hasDiffBenchmark) {
+    sec("BENCHMARK ANALYSIS");
+    const bmRow = el("div","ts-charts wide"); content.appendChild(bmRow);
+    const {box:bmBox, id:bmId} = pBox("BENCHMARK COMPARISON (4-PANEL)", 360, true);
+    bmRow.appendChild(bmBox); bmCmpId = bmId;
+
+    const bmRow2 = el("div","ts-charts"); content.appendChild(bmRow2);
+    const {box:capBox, id:cId} = pBox("UP/DOWN CAPTURE RATIOS", 200);
+    bmRow2.appendChild(capBox); capId = cId;
+    const {box:scBox, id:sId} = pBox("MONTHLY RETURN SCATTER", 200);
+    bmRow2.appendChild(scBox); scatterId = sId;
+  }
+
+  // Equity log scale + Seasonality
+  sec("ADDITIONAL ANALYSIS");
+  const addRow = el("div","ts-charts"); content.appendChild(addRow);
+  const {box:logBox, id:logId} = pBox("EQUITY CURVE (LOG SCALE)", 200);
+  addRow.appendChild(logBox);
+  const {box:seasonBox, id:seasonId} = pBox("SEASONALITY (AVG RETURN BY MONTH)", 200);
+  addRow.appendChild(seasonBox);
+
+  // Q-Q Plot + Drawdown duration histogram
+  const addRow2 = el("div","ts-charts"); content.appendChild(addRow2);
+  let qqId=null, ddHistId=null;
+  if (_monthlyRets) {
+    const {box:qqBox, id:qqI} = pBox("Q-Q PLOT VS NORMAL", 200);
+    addRow2.appendChild(qqBox); qqId = qqI;
+  }
+  const {box:ddHBox, id:ddHId} = pBox("DRAWDOWN DURATION HISTOGRAM", 200);
+  addRow2.appendChild(ddHBox); ddHistId = ddHId;
+
+  // Intra-month DD heatmap (full width)
+  sec("INTRA-MONTH MAX DRAWDOWN HEATMAP");
+  const imRow = el("div","ts-charts wide"); content.appendChild(imRow);
+  const {box:imBox, id:imId} = pBox("", 220, true);
+  imRow.appendChild(imBox);
+
+  // Annual performance vs benchmark table
+  sec("ANNUAL PERFORMANCE — STRATEGY vs BENCHMARK");
+  const annVsWrap = el("div"); annVsWrap.style.cssText = "padding:8px 12px;flex-shrink:0";
+  annVsWrap.appendChild(buildAnnualVsBenchmarkTable(dates, equity, hasDiffBenchmark?bmEq:[]));
+  content.appendChild(annVsWrap);
+
+  // ── 6d. ACTIVE RETURNS + BEST/WORST ──────────────────────────────────────
   // Always show Best/Worst months table
   sec("BEST / WORST MONTHS");
   const bwWrap = el("div"); bwWrap.style.cssText = "flex-shrink:0";
@@ -443,9 +499,6 @@ function _renderTearsheet(run_id) {
 
   // Active returns only if real benchmark differs from strategy
   let activeId = null;
-  const bmEq = result.bm_equity || [];
-  const hasDiffBenchmark = bmEq.length > 1 && equity.length > 1 &&
-    bmEq[bmEq.length-1] !== equity[equity.length-1];
   if (hasDiffBenchmark) {
     sec("MONTHLY ACTIVE RETURNS (Strategy - Benchmark)");
     const aRow = el("div","ts-charts wide"); content.appendChild(aRow);
@@ -511,6 +564,8 @@ function _renderTearsheet(run_id) {
   mrow("Pain Ratio",         num(m.pain_ratio));
   mrow("Recovery Factor",    num(m.recovery_factor),    m.recovery_factor>=1?"g":"r");
   mrow("SystemScore",        m.system_score!=null?num(m.system_score):"—", m.system_score>=1?"g":"");
+  mrow("Burke Ratio",        m.burke_ratio!=null?num(m.burke_ratio):"—",  m.burke_ratio>=0.5?"g":"");
+  mrow("Sterling Ratio",     m.sterling_ratio!=null?num(m.sterling_ratio):"—", m.sterling_ratio>=0.5?"g":"");
   mrow("K-Ratio",            num(m.k_ratio));
   mrow("Prob. Sharpe",       pct(m.psr),                m.psr>=0.95?"g":"");
 
@@ -523,11 +578,18 @@ function _renderTearsheet(run_id) {
   msec("RISK");
   mrow("Max Drawdown",       pct(m.max_dd),             "r");
   mrow("Avg Drawdown",       pct(m.avg_dd),             "r");
+  mrow("Max DD Duration",    m.max_dd_duration!=null?num(m.max_dd_duration,0)+" mo":"—","r");
+  mrow("Avg DD Duration",    m.avg_dd_duration!=null?num(m.avg_dd_duration,1)+" mo":"—","r");
+  mrow("Avg Recovery Time",  m.avg_recovery_time!=null?num(m.avg_recovery_time,1)+" mo":"—");
+  mrow("% Time in DD",       m.pct_time_in_dd!=null?pct(m.pct_time_in_dd):"—","r");
+  mrow("N Drawdowns",        m.n_drawdowns!=null?m.n_drawdowns:"—");
+  mrow("CDaR 95%",           m.cdar_95!=null?pct(m.cdar_95):"—","r");
   mrow("Ulcer Index",        num(m.ulcer_index,3));
   mrow("Pain Index",         num(m.pain_index,3));
   mrow("Lake Ratio",         num(m.lake_ratio,3));
   mrow("VaR 95%",            pct(m.var_95),             "r");
   mrow("CVaR 95%",           pct(m.cvar_95),            "r");
+  mrow("CF VaR 95%",         m.var_95_cf!=null?pct(m.var_95_cf):"—","r");
   mrow("VaR 99%",            pct(m.var_99),             "r");
   mrow("CVaR 99%",           pct(m.cvar_99),            "r");
 
@@ -546,6 +608,8 @@ function _renderTearsheet(run_id) {
   mrow("Win Rate (Yr)",      m.win_rate_yearly!=null?pct(m.win_rate_yearly):"—");
   mrow("Avg Up Month",       pct(m.avg_up_month),       "g");
   mrow("Avg Down Month",     pct(m.avg_down_month),     "r");
+  mrow("Outlier Win Ratio",  m.outlier_win_ratio!=null?num(m.outlier_win_ratio):"—");
+  mrow("Outlier Loss Ratio", m.outlier_loss_ratio!=null?num(m.outlier_loss_ratio):"—","r");
   mrow("Payoff Ratio",       num(m.payoff_ratio),       m.payoff_ratio>=1.5?"g":"");
   mrow("Profit Factor",      num(m.profit_factor),      m.profit_factor>=1?"g":"r");
   mrow("Common Sense",       num(m.common_sense_ratio));
@@ -554,8 +618,19 @@ function _renderTearsheet(run_id) {
   mrow("Max Consec. Losses", m.max_consec_losses!=null?m.max_consec_losses:"—","r");
   mrow("Exposure",           m.exposure!=null?pct(m.exposure):"—");
 
+  msec("TRAILING RETURNS");
+  mrow("1 Month",            m.trailing_1m!=null?pct(m.trailing_1m):     "—", g(m.trailing_1m));
+  mrow("3 Months",           m.trailing_3m!=null?pct(m.trailing_3m):     "—", g(m.trailing_3m));
+  mrow("6 Months",           m.trailing_6m!=null?pct(m.trailing_6m):     "—", g(m.trailing_6m));
+  mrow("1 Year",             m.trailing_1y!=null?pct(m.trailing_1y):     "—", g(m.trailing_1y));
+  mrow("3 Year (ann.)",      m.trailing_3y!=null?pct(m.trailing_3y):     "—", g(m.trailing_3y));
+  mrow("5 Year (ann.)",      m.trailing_5y!=null?pct(m.trailing_5y):     "—", g(m.trailing_5y));
+  mrow("10 Year (ann.)",     m.trailing_10y!=null?pct(m.trailing_10y):   "—", g(m.trailing_10y));
+
   msec("STATISTICAL");
   mrow("Equity R²",          m.equity_r2!=null?num(m.equity_r2,4):"—", m.equity_r2>=0.95?"g":m.equity_r2>=0.85?"":"r");
+  mrow("DSR",                m.dsr!=null?num(m.dsr,4):"—",              m.dsr>=0.95?"g":"");
+  mrow("Min TRL (months)",   m.min_trl_months!=null?num(m.min_trl_months,1):"—");
   mrow("Sharpe t-stat",      num(m.sharpe_tstat));
   mrow("Haircut Sharpe",     num(m.haircut_sharpe));
   mrow("Sharpe 95% CI",      m.sharpe_ci_95?`[${num(m.sharpe_ci_95[0])}, ${num(m.sharpe_ci_95[1])}]`:"—");
@@ -626,6 +701,28 @@ function _renderTearsheet(run_id) {
       try { drawActiveReturns(activeId, dates, equity, bmEq); } catch(e) { console.error("active",e); }
     // Crisis grid
     try { drawCrisisGrid(crisisId, dates, equity); } catch(e) { console.error("crisis",e); }
+
+    // ── Phase 1 new charts ────────────────────────────────────────────────────
+    // Trailing returns
+    try { drawTrailingReturns(trId, m); } catch(e) { console.error("trailing",e); }
+    // Benchmark comparison (only with real benchmark)
+    if (bmCmpId && hasDiffBenchmark)
+      try { drawBenchmarkComparison(bmCmpId, dates, equity, bmEq); } catch(e) { console.error("bmcmp",e); }
+    if (capId && hasDiffBenchmark)
+      try { drawCapture(capId, equity, bmEq, 12); } catch(e) { console.error("capture",e); }
+    if (scatterId && hasDiffBenchmark)
+      try { drawReturnScatter(scatterId, equity, bmEq); } catch(e) { console.error("scatter",e); }
+    // Equity log scale
+    try { drawEquityLog(logId, dates, equity); } catch(e) { console.error("logEq",e); }
+    // Seasonality
+    try { drawSeasonality(seasonId, dates, equity); } catch(e) { console.error("season",e); }
+    // Q-Q plot
+    if (qqId && _monthlyRets) try { drawQQ(qqId, _monthlyRets); } catch(e) { console.error("qq",e); }
+    // Drawdown duration histogram
+    try { drawDDDurationHist(ddHistId, dates, equity); } catch(e) { console.error("ddhist",e); }
+    // Intra-month DD heatmap
+    try { drawIntraMonthDDHeatmap(imId, dates, equity); } catch(e) { console.error("imdd",e); }
+
     // Quintile-specific
     if (scId) try { drawSectorBar(scId, result.sector_analysis); } catch(e) {}
     if (icId2) try { drawIC(icId2, result.ic_data); } catch(e) {}

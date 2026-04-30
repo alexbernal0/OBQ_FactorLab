@@ -477,8 +477,360 @@ function drawCrisisGrid(containerId, dates, equity) {
         yaxis:{gridcolor:"#eeeeee",tickfont:{size:6},tickcolor:"#9ca3af",autorange:true},
         hovermode:false,
       },{displayModeBar:false,responsive:true});
-      return; // cell already appended above
+        return; // cell already appended above
     }
     container.appendChild(cell);
   });
+}
+
+// ── Equity curve LOG scale ────────────────────────────────────────────────────
+function drawEquityLog(divId, dates, equity) {
+  if (!dates?.length || !equity?.length) return;
+  const x = dates.map(d=>String(d).slice(0,10));
+  Plotly.newPlot(divId, [{
+    x, y: equity, type:"scatter", mode:"lines", name:"Portfolio (log)",
+    line:{color:"#1d4ed8",width:2}, fill:"tozeroy", fillcolor:"rgba(29,78,216,0.07)",
+  }], _L({
+    margin:{l:52,r:8,t:8,b:36},
+    yaxis:{...PLOT_LAYOUT.yaxis, type:"log", autorange:true, title:{text:"Growth (log)",font:{size:8}}},
+  }), PLOT_CFG);
+}
+
+// ── Benchmark comparison 2×2 grid ─────────────────────────────────────────────
+// Four subplots: (1) cumulative returns, (2) log scale, (3) vol-matched, (4) cumulative alpha
+function drawBenchmarkComparison(divId, dates, equity, bmEquity) {
+  if (!dates?.length || !equity?.length || !bmEquity?.length) return;
+  const x = dates.map(d=>String(d).slice(0,10));
+
+  // Compute returns series
+  const stRets = equity.slice(1).map((v,i)=>v/(equity[i]||1)-1);
+  const bmRets = bmEquity.slice(1).map((v,i)=>v/(bmEquity[i]||1)-1);
+  const len = Math.min(stRets.length, bmRets.length);
+
+  // Cumulative (normalized to start at 1)
+  let cumSt=[1], cumBm=[1];
+  for(let i=0;i<len;i++){
+    cumSt.push(cumSt[cumSt.length-1]*(1+stRets[i]));
+    cumBm.push(cumBm[cumBm.length-1]*(1+bmRets[i]));
+  }
+
+  // Vol-matched benchmark
+  const stVol = Math.sqrt(stRets.reduce((s,v)=>{const m=stRets.reduce((a,b)=>a+b,0)/stRets.length; return s+(v-m)**2;},0)/stRets.length);
+  const bmVol = Math.sqrt(bmRets.reduce((s,v)=>{const m=bmRets.reduce((a,b)=>a+b,0)/bmRets.length; return s+(v-m)**2;},0)/bmRets.length);
+  const volAdj = bmVol>0?stVol/bmVol:1;
+  let cumBmVol=[1];
+  for(let i=0;i<len;i++) cumBmVol.push(cumBmVol[cumBmVol.length-1]*(1+bmRets[i]*volAdj));
+
+  // Cumulative alpha
+  const xShort = x.slice(0, len+1);
+  const alpha = cumSt.map((v,i)=>+(v-cumBm[i]).toFixed(4));
+
+  const base = {type:"scatter",mode:"lines",line:{width:1.5}};
+  Plotly.newPlot(divId,[
+    // Chart 1: cumulative (xaxis, yaxis)
+    {...base,x:xShort,y:cumSt,name:"Strategy",line:{color:"#1d4ed8",width:2},xaxis:"x",yaxis:"y"},
+    {...base,x:xShort,y:cumBm,name:"Benchmark",line:{color:"#f59e0b",width:1.5,dash:"dash"},xaxis:"x",yaxis:"y"},
+    // Chart 2: log scale (xaxis2, yaxis2)
+    {...base,x:xShort,y:cumSt,name:"Strategy",line:{color:"#1d4ed8",width:2},showlegend:false,xaxis:"x2",yaxis:"y2"},
+    {...base,x:xShort,y:cumBm,name:"Benchmark",line:{color:"#f59e0b",width:1.5,dash:"dash"},showlegend:false,xaxis:"x2",yaxis:"y2"},
+    // Chart 3: vol-matched (xaxis3, yaxis3)
+    {...base,x:xShort,y:cumSt,name:"Strategy",line:{color:"#1d4ed8",width:2},showlegend:false,xaxis:"x3",yaxis:"y3"},
+    {...base,x:xShort,y:cumBmVol,name:"BM Vol-Matched",line:{color:"#6d28d9",width:1.5,dash:"dot"},showlegend:false,xaxis:"x3",yaxis:"y3"},
+    // Chart 4: cumulative alpha (xaxis4, yaxis4)
+    {...base,x:xShort,y:alpha,name:"Cum. Alpha",line:{color:alpha[alpha.length-1]>=0?"#16a34a":"#dc2626",width:2},
+     fill:"tozeroy",fillcolor:alpha[alpha.length-1]>=0?"rgba(22,163,74,0.12)":"rgba(220,38,38,0.12)",
+     showlegend:false,xaxis:"x4",yaxis:"y4"},
+  ], {
+    paper_bgcolor:"#fff", plot_bgcolor:"#fafafa",
+    margin:{l:44,r:8,t:30,b:36},
+    font:{family:"Segoe UI,Arial",size:8,color:"#374151"},
+    legend:{orientation:"h",x:0,y:1.08,font:{size:9}},
+    grid:{rows:2,columns:2,pattern:"independent",ygap:0.12,xgap:0.1},
+    annotations:[
+      {text:"Cumulative Returns",xref:"x domain",yref:"y domain",x:0.5,y:1.04,showarrow:false,font:{size:8,color:"#374151"},xanchor:"center"},
+      {text:"Log Scale",xref:"x2 domain",yref:"y2 domain",x:0.5,y:1.04,showarrow:false,font:{size:8,color:"#374151"},xanchor:"center"},
+      {text:"Vol-Matched",xref:"x3 domain",yref:"y3 domain",x:0.5,y:1.04,showarrow:false,font:{size:8,color:"#374151"},xanchor:"center"},
+      {text:"Cumulative Alpha",xref:"x4 domain",yref:"y4 domain",x:0.5,y:1.04,showarrow:false,font:{size:8,color:"#374151"},xanchor:"center"},
+    ],
+    xaxis:{type:"date",gridcolor:"#eee",tickfont:{size:7}},
+    yaxis:{gridcolor:"#eee",tickfont:{size:7},autorange:true},
+    xaxis2:{type:"date",gridcolor:"#eee",tickfont:{size:7}},
+    yaxis2:{type:"log",gridcolor:"#eee",tickfont:{size:7},autorange:true},
+    xaxis3:{type:"date",gridcolor:"#eee",tickfont:{size:7}},
+    yaxis3:{gridcolor:"#eee",tickfont:{size:7},autorange:true},
+    xaxis4:{type:"date",gridcolor:"#eee",tickfont:{size:7}},
+    yaxis4:{gridcolor:"#eee",tickfont:{size:7},zeroline:true,zerolinecolor:"#374151",autorange:true},
+    hovermode:"x unified",
+  }, PLOT_CFG);
+}
+
+// ── Up/Down capture bar chart ──────────────────────────────────────────────────
+function drawCapture(divId, equity, bmEquity, periods_per_year) {
+  if (!equity?.length || !bmEquity?.length) return;
+  const ppy = periods_per_year || 12;
+  const stRets = equity.slice(1).map((v,i)=>v/(equity[i]||1)-1);
+  const bmRets = bmEquity.slice(1).map((v,i)=>v/(bmEquity[i]||1)-1);
+  const len = Math.min(stRets.length, bmRets.length);
+  const upMask=[], dnMask=[];
+  for(let i=0;i<len;i++){
+    if(bmRets[i]>0) upMask.push(i);
+    else if(bmRets[i]<0) dnMask.push(i);
+  }
+  function annualize(idxs, rets) {
+    if(!idxs.length) return 0;
+    const cum = idxs.reduce((acc,i)=>acc*(1+rets[i]),1);
+    return cum**(ppy/idxs.length)-1;
+  }
+  const stUp=annualize(upMask,stRets), bmUp=annualize(upMask,bmRets);
+  const stDn=annualize(dnMask,stRets), bmDn=annualize(dnMask,bmRets);
+  const upCap = bmUp!==0?+(stUp/bmUp*100).toFixed(1):0;
+  const dnCap = bmDn!==0?+(stDn/bmDn*100).toFixed(1):0;
+  const capRatio = dnCap!==0?+(upCap/dnCap).toFixed(2):0;
+
+  Plotly.newPlot(divId,[
+    {x:["Up Capture","Down Capture"],y:[upCap,dnCap],type:"bar",
+     marker:{color:[upCap>=100?"rgba(22,163,74,0.8)":"rgba(220,38,38,0.8)",
+                    dnCap<=100?"rgba(22,163,74,0.8)":"rgba(220,38,38,0.8)"]},
+     text:[upCap+"%",dnCap+"%"],textposition:"outside",showlegend:false},
+    {x:[-0.5,1.5],y:[100,100],type:"scatter",mode:"lines",
+     line:{color:"#374151",width:1.5,dash:"dash"},showlegend:false},
+  ],_L({
+    margin:{l:44,r:8,t:30,b:36},
+    yaxis:{...PLOT_LAYOUT.yaxis,ticksuffix:"%",range:[0,Math.max(upCap,dnCap)*1.25+10]},
+    title:{text:"Capture Ratios  (Ratio="+capRatio+")",font:{size:9,color:"#374151"},x:0.5,xanchor:"center"},
+    showlegend:false,
+  }), PLOT_CFG);
+}
+
+// ── Seasonality heatmap (avg return by month-of-year) ─────────────────────────
+function drawSeasonality(divId, dates, equity) {
+  if (!dates?.length || !equity?.length) return;
+  // Build monthly returns keyed by month 1-12
+  const byMonth = {};
+  for(let i=1;i<equity.length;i++){
+    const ret = equity[i]/equity[i-1]-1;
+    const mo = parseInt(String(dates[i]).slice(5,7),10);
+    if(!byMonth[mo]) byMonth[mo]=[];
+    byMonth[mo].push(ret*100);
+  }
+  const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const avgs=MONTHS.map((_,idx)=>{
+    const arr=byMonth[idx+1]||[];
+    if(!arr.length) return null;
+    return +(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(3);
+  });
+  const colors=avgs.map(v=>v==null?"#e5e7eb":v>=0?"rgba(22,163,74,0.7)":"rgba(220,38,38,0.7)");
+  Plotly.newPlot(divId,[{
+    x:MONTHS, y:avgs.map(v=>v||0),
+    type:"bar", marker:{color:colors},
+    text:avgs.map(v=>v==null?"n/a":(v>=0?"+":"")+v+"%"),
+    textposition:"outside", showlegend:false,
+  }],_L({
+    margin:{l:44,r:8,t:8,b:36},
+    yaxis:{...PLOT_LAYOUT.yaxis,ticksuffix:"%",autorange:true,
+           zeroline:true,zerolinecolor:"#374151"},
+    showlegend:false,
+  }), PLOT_CFG);
+}
+
+// ── Q-Q plot vs normal ─────────────────────────────────────────────────────────
+function drawQQ(divId, monthlyRets) {
+  if (!monthlyRets?.length) return;
+  const vals = monthlyRets.map(v=>v*100).sort((a,b)=>a-b);
+  const n = vals.length;
+  // Theoretical quantiles from normal distribution
+  function normInvCDF(p) {
+    // Rational approximation (Abramowitz and Stegun)
+    if(p<=0) return -6; if(p>=1) return 6;
+    const a=[0,-3.969683028665376e+01,2.209460984245205e+02,-2.759285104469687e+02,1.383577518672690e+02,-3.066479806614716e+01,2.506628277459239e+00];
+    const b=[0,-5.447609879822406e+01,1.615858368580409e+02,-1.556989798598866e+02,6.680131188771972e+01,-1.328068155288572e+01];
+    const c=[0,-7.784894002430293e-03,-3.223964580411365e-01,-2.400758277161838e+00,-2.549732539343734e+00,4.374664141464968e+00,2.938163982698783e+00];
+    const d=[0,7.784695709041462e-03,3.224671290700398e-01,2.445134137142996e+00,3.754408661907416e+00];
+    const pLow=0.02425, pHigh=1-pLow;
+    let q,r2;
+    if(p<pLow){q=Math.sqrt(-2*Math.log(p));return (((((c[1]*q+c[2])*q+c[3])*q+c[4])*q+c[5])*q+c[6])/((((d[1]*q+d[2])*q+d[3])*q+d[4])*q+1);}
+    if(p<=pHigh){q=p-0.5;r2=q*q;return (((((a[1]*r2+a[2])*r2+a[3])*r2+a[4])*r2+a[5])*r2+a[6])*q/(((((b[1]*r2+b[2])*r2+b[3])*r2+b[4])*r2+b[5])*r2+1);}
+    q=Math.sqrt(-2*Math.log(1-p));return -(((((c[1]*q+c[2])*q+c[3])*q+c[4])*q+c[5])*q+c[6])/((((d[1]*q+d[2])*q+d[3])*q+d[4])*q+1);
+  }
+  const theoretical = vals.map((_,i)=>+(normInvCDF((i+0.5)/n)*vals.reduce((s,v)=>{return s+(v-vals.reduce((a,b)=>a+b,0)/n)**2;},0)/n>0?Math.sqrt(vals.reduce((s,v)=>{return s+(v-vals.reduce((a,b)=>a+b,0)/n)**2;},0)/n):1).toFixed(3));
+  // Simpler: just use z-scores of sorted ranks
+  const mu = vals.reduce((a,b)=>a+b,0)/n;
+  const sd = Math.sqrt(vals.reduce((s,v)=>s+(v-mu)**2,0)/n);
+  const theor = vals.map((_,i)=>+normInvCDF((i+0.375)/(n+0.25)).toFixed(3));
+  // Reference line: from 1st to 3rd quartile
+  const q1t=normInvCDF(0.25), q3t=normInvCDF(0.75);
+  const q1s=vals[Math.floor(n*0.25)], q3s=vals[Math.floor(n*0.75)];
+  const slope=(q3s-q1s)/(q3t-q1t||1), intercept=q1s-slope*q1t;
+  const xLine=[theor[0],theor[theor.length-1]];
+  const yLine=xLine.map(x=>+(slope*x+intercept).toFixed(3));
+
+  Plotly.newPlot(divId,[
+    {x:theor,y:vals,type:"scatter",mode:"markers",name:"Sample",
+     marker:{color:"#1d4ed8",size:4,opacity:0.7},showlegend:false},
+    {x:xLine,y:yLine,type:"scatter",mode:"lines",name:"Normal ref",
+     line:{color:"#dc2626",width:1.5,dash:"dash"},showlegend:true},
+  ],_L({
+    margin:{l:48,r:8,t:8,b:40},
+    xaxis:{...PLOT_LAYOUT.xaxis,title:{text:"Theoretical Quantiles",font:{size:8}}},
+    yaxis:{...PLOT_LAYOUT.yaxis,autorange:true,title:{text:"Sample Quantiles",font:{size:8}}},
+  }),PLOT_CFG);
+}
+
+// ── Monthly scatter vs benchmark ──────────────────────────────────────────────
+function drawReturnScatter(divId, equity, bmEquity) {
+  if (!equity?.length || !bmEquity?.length) return;
+  const stRets = equity.slice(1).map((v,i)=>+(v/(equity[i]||1)-1)*100).slice(0,bmEquity.length-1);
+  const bmRets = bmEquity.slice(1).map((v,i)=>+(v/(bmEquity[i]||1)-1)*100).slice(0,equity.length-1);
+  const len=Math.min(stRets.length,bmRets.length);
+  const xs=bmRets.slice(0,len), ys=stRets.slice(0,len);
+
+  // OLS regression line
+  const n=len, mx=xs.reduce((a,b)=>a+b,0)/n, my=ys.reduce((a,b)=>a+b,0)/n;
+  const cov=xs.reduce((s,v,i)=>s+(v-mx)*(ys[i]-my),0)/n;
+  const varX=xs.reduce((s,v)=>s+(v-mx)**2,0)/n;
+  const slope=varX>0?+(cov/varX).toFixed(3):1, intercept=+(my-slope*mx).toFixed(3);
+  const xMin=Math.min(...xs)-1, xMax=Math.max(...xs)+1;
+
+  Plotly.newPlot(divId,[
+    {x:xs,y:ys,type:"scatter",mode:"markers",name:"Monthly returns",
+     marker:{color:"#1d4ed8",size:5,opacity:0.65},showlegend:false},
+    {x:[xMin,xMax],y:[slope*xMin+intercept,slope*xMax+intercept],type:"scatter",mode:"lines",
+     name:"OLS (β="+slope+")",line:{color:"#dc2626",width:1.5},showlegend:true},
+    {x:[xMin,xMax],y:[xMin,xMax],type:"scatter",mode:"lines",
+     name:"y=x",line:{color:"#9ca3af",width:1,dash:"dot"},showlegend:true},
+  ],_L({
+    margin:{l:48,r:8,t:8,b:44},
+    xaxis:{...PLOT_LAYOUT.xaxis,ticksuffix:"%",title:{text:"Benchmark Return %",font:{size:8}}},
+    yaxis:{...PLOT_LAYOUT.yaxis,ticksuffix:"%",title:{text:"Strategy Return %",font:{size:8}},autorange:true},
+  }),PLOT_CFG);
+}
+
+// ── Drawdown duration histogram ───────────────────────────────────────────────
+function drawDDDurationHist(divId, dates, equity) {
+  if (!dates?.length || !equity?.length) return;
+  // Compute drawdown period durations
+  const durations=[];
+  let inDD=false, startIdx=0;
+  for(let i=0;i<equity.length;i++){
+    let peak=equity[0];
+    for(let j=0;j<i;j++) if(equity[j]>peak) peak=equity[j];
+    const dd=(equity[i]/peak-1)*100;
+    if(!inDD && dd<0){inDD=true;startIdx=i;}
+    else if(inDD && dd>=-0.01){durations.push(i-startIdx);inDD=false;}
+  }
+  if(!durations.length) return;
+  Plotly.newPlot(divId,[{
+    x:durations,type:"histogram",name:"DD Duration",
+    marker:{color:"rgba(220,38,38,0.6)",line:{color:"#dc2626",width:0.5}},
+    nbinsx:Math.min(30,Math.ceil(durations.length/2)),
+  }],_L({
+    margin:{l:44,r:8,t:8,b:36},
+    xaxis:{...PLOT_LAYOUT.xaxis,title:{text:"Duration (periods)",font:{size:8}}},
+    yaxis:{...PLOT_LAYOUT.yaxis,title:{text:"Count",font:{size:8}}},
+    showlegend:false,
+  }),PLOT_CFG);
+}
+
+// ── Trailing returns bar chart ────────────────────────────────────────────────
+function drawTrailingReturns(divId, metrics) {
+  const periods=["1M","3M","6M","1Y","3Y*","5Y*","10Y*"];
+  const keys=["trailing_1m","trailing_3m","trailing_6m","trailing_1y","trailing_3y","trailing_5y","trailing_10y"];
+  const vals=keys.map(k=>metrics[k]!=null?+(metrics[k]*100).toFixed(2):null);
+  const validX=[], validY=[];
+  periods.forEach((p,i)=>{if(vals[i]!=null){validX.push(p);validY.push(vals[i]);}});
+  if(!validX.length) return;
+  Plotly.newPlot(divId,[{
+    x:validX, y:validY, type:"bar",
+    marker:{color:validY.map(v=>v>=0?"rgba(22,163,74,0.75)":"rgba(220,38,38,0.75)")},
+    text:validY.map(v=>(v>=0?"+":"")+v+"%"),
+    textposition:"outside", showlegend:false,
+  }],_L({
+    margin:{l:44,r:8,t:8,b:36},
+    yaxis:{...PLOT_LAYOUT.yaxis,ticksuffix:"%",autorange:true,zeroline:true,zerolinecolor:"#374151"},
+    showlegend:false,
+  }),PLOT_CFG);
+}
+
+// ── Intra-month max DD heatmap ────────────────────────────────────────────────
+function drawIntraMonthDDHeatmap(divId, dates, equity) {
+  if (!dates?.length || !equity?.length) return;
+  // Group by year-month, compute worst intra-period DD
+  const byYearMonth={};
+  for(let i=1;i<equity.length;i++){
+    const ym=String(dates[i]).slice(0,7);
+    if(!byYearMonth[ym]) byYearMonth[ym]=[];
+    byYearMonth[ym].push(equity[i]);
+  }
+  // Build pivot: years × months
+  const years=[...new Set(Object.keys(byYearMonth).map(k=>k.slice(0,4)))].sort();
+  const mos=["01","02","03","04","05","06","07","08","09","10","11","12"];
+  const MNAMES=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const zData=years.map(yr=>mos.map(mo=>{
+    const prices=byYearMonth[yr+"-"+mo];
+    if(!prices||prices.length<2) return null;
+    let pk=prices[0],mdd=0;
+    prices.forEach(p=>{pk=Math.max(pk,p);mdd=Math.min(mdd,(p/pk-1)*100);});
+    return +mdd.toFixed(2);
+  }));
+  const textData=zData.map(row=>row.map(v=>v==null?"":v.toFixed(1)+"%"));
+  Plotly.newPlot(divId,[{
+    z:zData, x:MNAMES, y:years,
+    type:"heatmap",
+    colorscale:[[0,"#b91c1c"],[0.5,"#fff7ed"],[1,"#f0fdf4"]],
+    zmid:-5, zmax:0, zmin:-30,
+    text:textData, texttemplate:"%{text}",
+    textfont:{size:7}, showscale:false,
+    hoverongaps:false,
+    colorbar:{title:"%",tickfont:{size:7}},
+  }],{
+    paper_bgcolor:"#fff",plot_bgcolor:"#fff",
+    margin:{l:36,r:8,t:8,b:36},
+    font:{family:"Segoe UI,Arial",size:8,color:"#374151"},
+    xaxis:{tickfont:{size:7}},
+    yaxis:{tickfont:{size:7},autorange:"reversed"},
+  },PLOT_CFG);
+}
+
+// ── Annual performance table: Strategy vs Benchmark per year ──────────────────
+function buildAnnualVsBenchmarkTable(dates, equity, bmEquity) {
+  if (!dates?.length || !equity?.length) return document.createElement("div");
+  // Build annual returns by year
+  const byYear={}, bmByYear={};
+  for(let i=1;i<equity.length;i++){
+    const yr=String(dates[i]).slice(0,4);
+    const stRet=equity[i]/(equity[i-1]||1)-1;
+    if(!byYear[yr]) byYear[yr]=[];
+    byYear[yr].push(stRet);
+    if(bmEquity&&bmEquity[i]){
+      const bmRet=bmEquity[i]/(bmEquity[i-1]||1)-1;
+      if(!bmByYear[yr]) bmByYear[yr]=[];
+      bmByYear[yr].push(bmRet);
+    }
+  }
+  const years=Object.keys(byYear).sort();
+  const compound=arr=>arr.reduce((a,v)=>a*(1+v),1)-1;
+  const wrap=document.createElement("div"); wrap.style.overflowX="auto";
+  let html=`<table style="width:100%;border-collapse:collapse;font-size:9px;font-family:'Segoe UI',sans-serif">
+    <thead><tr>
+      <th style="padding:3px 6px;background:#f1f5f9;color:#374151;font-size:8px;border-bottom:2px solid #e5e7eb;text-align:left">YEAR</th>
+      <th style="padding:3px 6px;background:#f1f5f9;color:#374151;font-size:8px;border-bottom:2px solid #e5e7eb;text-align:right">STRATEGY</th>
+      <th style="padding:3px 6px;background:#f1f5f9;color:#374151;font-size:8px;border-bottom:2px solid #e5e7eb;text-align:right">BENCHMARK</th>
+      <th style="padding:3px 6px;background:#f1f5f9;color:#374151;font-size:8px;border-bottom:2px solid #e5e7eb;text-align:right">EXCESS</th>
+    </tr></thead><tbody>`;
+  years.forEach((yr,i)=>{
+    const st=compound(byYear[yr])*100;
+    const bm=bmByYear[yr]?compound(bmByYear[yr])*100:null;
+    const ex=bm!=null?st-bm:null;
+    const stC=st>=0?"#15803d":"#b91c1c";
+    const bmC=bm!=null?(bm>=0?"#15803d":"#b91c1c"):"#9ca3af";
+    const exC=ex!=null?(ex>=0?"#15803d":"#b91c1c"):"#9ca3af";
+    html+=`<tr style="background:${i%2?"#f9fafb":"#fff"}">
+      <td style="padding:2px 6px;font-weight:600;color:#374151">${yr}</td>
+      <td style="padding:2px 6px;text-align:right;font-weight:700;color:${stC}">${st>=0?"+":""}${st.toFixed(1)}%</td>
+      <td style="padding:2px 6px;text-align:right;color:${bmC}">${bm!=null?(bm>=0?"+":"")+bm.toFixed(1)+"%":"—"}</td>
+      <td style="padding:2px 6px;text-align:right;font-weight:600;color:${exC}">${ex!=null?(ex>=0?"+":"")+ex.toFixed(1)+"%":"—"}</td>
+    </tr>`;
+  });
+  html+="</tbody></table>";
+  wrap.innerHTML=html; return wrap;
 }
