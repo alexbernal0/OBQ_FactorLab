@@ -405,6 +405,11 @@ def _run_quintile_backtest(
         bucket_equity[str(b)] = eq
         bucket_dates[str(b)] = bdata["month_date"].tolist()
 
+    # ── Compute universe-level returns (equal-weighted all stocks per period) ──
+    universe_rets_by_period = df.groupby("month_date")["fwd_return"].mean()
+    universe_rets = universe_rets_by_period.values
+    universe_eq   = np.concatenate([[1.0], np.cumprod(1 + universe_rets)])
+
     # Compute metrics per bucket
     from engine.metrics import compute_all
     bucket_metrics = {}
@@ -419,6 +424,114 @@ def _run_quintile_backtest(
             bucket_metrics[str(b)] = m
         except Exception:
             bucket_metrics[str(b)] = {}
+
+    # ── Tortoriello metrics per bucket ─────────────────────────────────────────
+    ppy = 12 / cfg.hold_months   # periods per year (e.g. 2 for 6-month hold)
+    tortoriello = {}
+    for b in range(1, n + 1):
+        rets_b = np.array(bucket_returns.get(str(b), []))
+        if len(rets_b) < 4 or len(universe_rets) < 4:
+            tortoriello[str(b)] = {}
+            continue
+
+        min_len = min(len(rets_b), len(universe_rets))
+        rb = rets_b[:min_len]
+        ru = universe_rets[:min_len]
+        excess = rb - ru
+
+        # Terminal wealth: $10,000 → $X
+        eq_b = np.array(bucket_equity.get(str(b), [1.0]))
+        terminal_wealth = float(10000 * eq_b[-1]) if len(eq_b) > 1 else 10000.0
+
+        # Average excess return vs universe (arithmetic)
+        avg_excess = float(excess.mean())
+
+        # % of 1-period windows outperforming
+        pct_1y = float((excess > 0).mean())
+
+        # % of rolling 3-year windows outperforming (3yr = 6 periods at 6mo hold)
+        window_3y = max(2, int(round(3 * ppy)))
+        roll_3y = []
+        for i in range(window_3y, len(rb) + 1):
+            cum_b = float(np.prod(1 + rb[i-window_3y:i]) - 1)
+            cum_u = float(np.prod(1 + ru[i-window_3y:i]) - 1)
+            roll_3y.append(cum_b > cum_u)
+        pct_3y = float(np.mean(roll_3y)) if roll_3y else 0.0
+
+        # Maximum gain / loss (worst single period)
+        max_gain = float(rb.max())
+        max_loss = float(rb.min())
+
+        # Standard deviation (annualized)
+        std_dev = float(rb.std() * np.sqrt(ppy))
+
+        # Beta and Alpha vs universe
+        if np.var(ru) > 0:
+            beta  = float(np.cov(rb, ru)[0, 1] / np.var(ru))
+            alpha = float(rb.mean() * ppy - beta * ru.mean() * ppy)
+        else:
+            beta, alpha = 1.0, 0.0
+
+        # Average portfolio size (stocks in bucket per period)
+        avg_size = float(
+            period_stats[period_stats["bucket"] == b]["n_stocks"].mean()
+        )
+
+        # Avg companies outperforming / underperforming universe per period
+        def _count_vs_universe(grp):
+            period_universe_ret = universe_rets_by_period.get(grp.name, 0)
+            return pd.Series({
+                "n_beat": (grp["fwd_return"] > period_universe_ret).sum(),
+                "n_lag":  (grp["fwd_return"] <= period_universe_ret).sum(),
+            })
+        bucket_df = df[df["bucket"] == b]
+        beat_lag  = bucket_df.groupby("month_date").apply(_count_vs_universe)
+        avg_beat  = float(beat_lag["n_beat"].mean()) if len(beat_lag) > 0 else 0.0
+        avg_lag   = float(beat_lag["n_lag"].mean())  if len(beat_lag) > 0 else 0.0
+
+        # Median factor score (raw) per bucket — tells you what factor value is in each bucket
+        med_score = float(bucket_df["score_raw"].median()) if len(bucket_df) > 0 else 0.0
+
+        # Average market cap per bucket (if available)
+        avg_mktcap = float(bucket_df["market_cap"].mean()) if "market_cap" in bucket_df.columns and not bucket_df["market_cap"].isna().all() else None
+
+        # Rolling 3-year excess returns series (for the rolling chart)
+        roll_3y_series = []
+        roll_dates_3y  = []
+        d_list = sorted(period_stats["month_date"].unique().tolist())
+        for i in range(window_3y, len(rb) + 1):
+            cum_b = float(np.prod(1 + rb[i-window_3y:i]) ** (1/3) - 1)  # annualized
+            cum_u = float(np.prod(1 + ru[i-window_3y:i]) ** (1/3) - 1)
+            roll_3y_series.append(round(cum_b - cum_u, 4))
+            if i <= len(d_list):
+                roll_dates_3y.append(d_list[i-1])
+
+        tortoriello[str(b)] = {
+            "terminal_wealth":  round(terminal_wealth, 0),
+            "avg_excess_vs_univ": round(avg_excess, 4),
+            "pct_1y_beats_univ":  round(pct_1y, 3),
+            "pct_3y_beats_univ":  round(pct_3y, 3),
+            "max_gain":           round(max_gain, 4),
+            "max_loss":           round(max_loss, 4),
+            "std_dev_ann":        round(std_dev, 4),
+            "beta_vs_univ":       round(beta, 3),
+            "alpha_vs_univ":      round(alpha, 4),
+            "avg_portfolio_size": round(avg_size, 1),
+            "avg_beat_universe":  round(avg_beat, 1),
+            "avg_lag_universe":   round(avg_lag, 1),
+            "median_factor_score":round(med_score, 2),
+            "avg_market_cap":     round(avg_mktcap, 0) if avg_mktcap else None,
+            "roll_3y_excess":     roll_3y_series,
+            "roll_3y_dates":      roll_dates_3y,
+        }
+
+    # Universe metrics for comparison column
+    from engine.metrics import compute_all as _ca
+    try:
+        univ_metrics = _ca(equity=universe_eq, monthly_ret=universe_rets, periods_per_year=ppy)
+    except Exception:
+        univ_metrics = {}
+    universe_terminal = float(10000 * universe_eq[-1]) if len(universe_eq) > 1 else 10000.0
 
     # IC (Information Coefficient) — Spearman ρ between rank and fwd return per period
     ic_data = []
@@ -516,6 +629,10 @@ def _run_quintile_backtest(
         "bucket_returns":       bucket_returns,
         "bucket_equity":        bucket_equity,
         "bucket_metrics":       bucket_metrics,
+        "tortoriello":          tortoriello,         # Tortoriello table metrics per bucket
+        "universe_metrics":     univ_metrics,         # Universe column
+        "universe_equity":      [round(v,6) for v in universe_eq.tolist()],
+        "universe_terminal":    round(universe_terminal, 0),
         "ic_data":              ic_data,
         "period_data":          period_data,
         "factor_metrics":       factor_metrics,

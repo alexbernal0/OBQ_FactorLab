@@ -207,6 +207,207 @@ function ftDrawSectorAttribution(divId, sectorAttribution, n_buckets) {
   }), FT_CFG);
 }
 
+// ── Tortoriello Standard Backtest Table ──────────────────────────────────────
+// Rows = metrics, Cols = Q1..Qn + Universe
+// This is the institutional standard from Quantitative Strategies for Achieving Alpha
+function ftBuildTortorielloTable(buckets, bucketMetrics, tortoriello, universeMetrics, universeMeta) {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "overflow-x:auto;margin:0 12px 12px;flex-shrink:0";
+
+  const n = buckets.length;
+  const um = universeMetrics || {};
+  const ut = universeMeta  || {};  // {terminal_wealth, cagr}
+
+  function pct(v, d=1, sign=false) {
+    if(v==null||isNaN(v)) return "—";
+    const s = (v*100).toFixed(d);
+    return sign && v>=0 ? "+"+s+"%" : s+"%";
+  }
+  function num(v, d=2) { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
+  function dollar(v)   { if(v==null||isNaN(v)) return "—"; return "$"+Math.round(v).toLocaleString(); }
+
+  // Column headers
+  const qCols = buckets.map(b => "Q"+b);
+  const cols   = [...qCols, "UNIVERSE"];
+  const colColors = [...buckets.map((_,i) => FT_COLORS.q[i]||"#374151"), "#6b7280"];
+
+  // Rows definition: [label, accessor_fn, format_fn, color_fn]
+  const rows = [
+    ["CAGR — Period Rebalance",
+      b => (bucketMetrics[b]||{}).cagr,
+      v => pct(v,2,true),
+      v => v>=0.08?"#15803d":v>=0?"#374151":"#b91c1c"],
+
+    ["Avg Excess Return vs Universe",
+      b => (tortoriello[b]||{}).avg_excess_vs_univ,
+      v => pct(v,2,true),
+      v => v>0.01?"#15803d":v>0?"#374151":"#b91c1c"],
+
+    ["Value of $10,000 Invested",
+      b => (tortoriello[b]||{}).terminal_wealth,
+      v => dollar(v),
+      v => v>15000?"#15803d":"#374151"],
+
+    ["% of Periods Beats Universe",
+      b => (tortoriello[b]||{}).pct_1y_beats_univ,
+      v => pct(v,1),
+      v => v>=0.60?"#15803d":v>=0.50?"#374151":"#b91c1c"],
+
+    ["% Rolling 3-Yr Beats Universe",
+      b => (tortoriello[b]||{}).pct_3y_beats_univ,
+      v => pct(v,1),
+      v => v>=0.70?"#15803d":v>=0.60?"#374151":"#b91c1c"],
+
+    ["Maximum Gain (1 Period)",
+      b => (tortoriello[b]||{}).max_gain,
+      v => pct(v,2,true),
+      v => "#374151"],
+
+    ["Maximum Loss (1 Period)",
+      b => (tortoriello[b]||{}).max_loss,
+      v => pct(v,2),
+      v => "#b91c1c"],
+
+    ["Sharpe Ratio",
+      b => (bucketMetrics[b]||{}).sharpe,
+      v => num(v,3),
+      v => v>=1?"#15803d":v>=0.5?"#374151":"#b91c1c"],
+
+    ["Standard Deviation (Ann.)",
+      b => (tortoriello[b]||{}).std_dev_ann,
+      v => pct(v,2),
+      v => "#374151"],
+
+    ["Beta (vs Universe)",
+      b => (tortoriello[b]||{}).beta_vs_univ,
+      v => num(v,3),
+      v => "#374151"],
+
+    ["Alpha (vs Universe, Ann.)",
+      b => (tortoriello[b]||{}).alpha_vs_univ,
+      v => pct(v,2,true),
+      v => v>0?"#15803d":"#b91c1c"],
+
+    ["Calmar Ratio",
+      b => (bucketMetrics[b]||{}).calmar,
+      v => num(v,3),
+      v => v>=0.5?"#15803d":"#374151"],
+
+    ["Max Drawdown",
+      b => (bucketMetrics[b]||{}).max_dd,
+      v => pct(v,2),
+      v => "#b91c1c"],
+
+    ["Avg Portfolio Size",
+      b => (tortoriello[b]||{}).avg_portfolio_size,
+      v => v!=null?Math.round(v):"—",
+      v => "#374151"],
+
+    ["Avg Companies Beating Universe",
+      b => (tortoriello[b]||{}).avg_beat_universe,
+      v => v!=null?Math.round(v):"—",
+      v => "#15803d"],
+
+    ["Avg Companies Lagging Universe",
+      b => (tortoriello[b]||{}).avg_lag_universe,
+      v => v!=null?Math.round(v):"—",
+      v => "#b91c1c"],
+
+    ["Median Factor Score (Bucket)",
+      b => (tortoriello[b]||{}).median_factor_score,
+      v => num(v,1),
+      v => "#7c3aed"],
+
+    ["Avg Market Cap ($M)",
+      b => (tortoriello[b]||{}).avg_market_cap,
+      v => v!=null?("$"+Math.round(v/1e6).toLocaleString()+"M"):"—",
+      v => "#374151"],
+  ];
+
+  // Universe values for the last column
+  const univVals = {
+    cagr: um.cagr,
+    terminal_wealth: universeMeta?.terminal_wealth,
+    avg_excess_vs_univ: 0,
+    pct_1y_beats_univ: null,
+    pct_3y_beats_univ: null,
+    max_gain: ut.max_gain || (um.best_month),
+    max_loss: ut.max_loss || (um.worst_month),
+    sharpe: um.sharpe,
+    std_dev_ann: um.ann_vol,
+    beta_vs_univ: 1.0,
+    alpha_vs_univ: 0,
+    calmar: um.calmar,
+    max_dd: um.max_dd,
+    avg_portfolio_size: null,
+    avg_beat_universe: null,
+    avg_lag_universe: null,
+    median_factor_score: null,
+    avg_market_cap: null,
+  };
+
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:9px;font-family:'Segoe UI',sans-serif;white-space:nowrap">
+    <thead><tr>
+      <th style="text-align:left;padding:5px 10px;background:#1e3a5f;color:#c9a84c;font-size:8px;font-weight:700;position:sticky;left:0;min-width:200px;border-right:2px solid #c9a84c">METRIC</th>
+      ${cols.map((c,i)=>`<th style="text-align:right;padding:5px 10px;background:#1e3a5f;color:${colColors[i]};font-size:9px;font-weight:700;min-width:80px">${c}</th>`).join("")}
+    </tr></thead><tbody>`;
+
+  rows.forEach(([label, accessor, formatter, colorFn], ri) => {
+    const bg = ri%2===0?"#ffffff":"#f9fafb";
+    html += `<tr style="background:${bg}">
+      <td style="padding:4px 10px;color:#374151;font-weight:600;position:sticky;left:0;background:${bg};border-right:2px solid #e5e7eb;border-bottom:1px solid #f3f4f6">${label}</td>`;
+
+    // Bucket columns
+    buckets.forEach((b,i) => {
+      const raw = accessor(String(b));
+      const val = formatter(raw);
+      const col = colorFn(raw);
+      html += `<td style="padding:4px 10px;text-align:right;font-weight:700;color:${col};border-bottom:1px solid #f3f4f6">${val}</td>`;
+    });
+
+    // Universe column
+    const rowKey = Object.keys(univVals)[ri];
+    const uRaw   = univVals[rowKey];
+    const uVal   = uRaw!=null ? formatter(uRaw) : "—";
+    const uCol   = uRaw!=null ? colorFn(uRaw) : "#9ca3af";
+    html += `<td style="padding:4px 10px;text-align:right;color:${uCol};border-bottom:1px solid #f3f4f6">${uVal}</td></tr>`;
+  });
+
+  html += "</tbody></table>";
+  wrap.innerHTML = html;
+  return wrap;
+}
+
+// ── Rolling 3-Year Excess Return Chart ───────────────────────────────────────
+function ftDrawRolling3Y(divId, tortoriello, buckets) {
+  const traces = [];
+  [0, buckets.length-1].forEach(bi => {
+    const b = buckets[bi];
+    const t = (tortoriello||{})[String(b)] || {};
+    const x = t.roll_3y_dates || [];
+    const y = (t.roll_3y_excess||[]).map(v=>+(v*100).toFixed(2));
+    if(!x.length) return;
+    traces.push({
+      x, y, type:"scatter", mode:"lines",
+      name:"Q"+b+" excess",
+      line:{color:FT_COLORS.q[bi]||"#888",width:2},
+      fill:"tozeroy",
+      fillcolor:bi===0?"rgba(22,163,74,0.10)":"rgba(220,38,38,0.10)",
+    });
+  });
+  traces.push({
+    x:traces[0]?.x||[], y:(traces[0]?.x||[]).map(()=>0),
+    type:"scatter", mode:"lines",
+    line:{color:"#9ca3af",width:1,dash:"dot"}, showlegend:false,
+  });
+  Plotly.newPlot(divId, traces, _ftLayout({
+    margin:{l:52,r:8,t:8,b:36},
+    yaxis:{...{gridcolor:FT_COLORS.grid,linecolor:"#cccccc",tickfont:{size:8},autorange:true,
+               zeroline:true,zerolinecolor:"#374151",zerolinewidth:1},
+           ticksuffix:"%",title:{text:"Excess vs Universe",font:{size:8}}},
+  }), FT_CFG);
+}
+
 // ── Build Factor Tearsheet metrics table ────────────────────────────────────
 function ftBuildMetricsTable(factorMetrics, buckets, bucketMetrics) {
   const fm = factorMetrics || {};

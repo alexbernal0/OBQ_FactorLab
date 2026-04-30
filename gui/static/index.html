@@ -5,413 +5,453 @@
   <title>OBQ Factor Lab</title>
   <link rel="stylesheet" href="/static/css/app.css"/>
   <style>
-    /* ── Table pane ─────────────────────────────── */
-    .fl-tbl-header { display:flex; padding:4px 8px; background:var(--bg-panel); border-bottom:1px solid var(--border); flex-shrink:0; user-select:none; }
-    .fl-th { font-size:9px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; padding:3px 4px; cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:2px; }
-    .fl-th:hover { color:var(--accent); }
-    .fl-th.sorted { color:var(--accent); }
+    /* ═══════════════════════════════════════════════════════════
+       SHARED COMPONENT STYLES — used by all 4 tabs
+    ═══════════════════════════════════════════════════════════ */
+
+    /* ── Table rows / headers ── */
+    .fl-tbl-header { display:flex; padding:4px 8px; background:#f1f5f9; border-bottom:2px solid #e2e8f0; flex-shrink:0; user-select:none; }
+    .fl-th { font-size:9px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.5px; padding:3px 4px; cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:2px; }
+    .fl-th:hover { color:#0066cc; }
     .fl-sort-arrow { font-size:8px; }
     .fl-tbl-body { flex:1; overflow-y:auto; }
-    .fl-tr { display:flex; padding:5px 8px; border-bottom:1px solid var(--border); cursor:pointer; align-items:center; border-left:3px solid transparent; }
-    .fl-tr:hover { background:var(--bg-panel); }
-    .fl-tr.active { border-left-color:var(--accent); background:var(--bg-panel); }
-    .fl-tr.pos { border-left-color:#16a34a; }
-    .fl-tr.neg { border-left-color:#dc2626; }
-    .fl-td { font-size:11px; color:var(--text); padding:0 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .fl-tr { display:flex; padding:5px 8px; border-bottom:1px solid #f1f5f9; cursor:pointer; align-items:center; border-left:3px solid transparent; transition:background .1s; }
+    .fl-tr:hover { background:#f8fafc; }
+    .fl-tr.active { border-left-color:#0066cc; background:#eff6ff; }
+    .fl-tr.promoted { border-left-color:#16a34a; }
+    .fl-tr.tracked  { border-left-color:#7c3aed; }
+    .fl-td { font-size:11px; color:#374151; padding:0 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .fl-td.g { color:#16a34a; font-weight:600; }
     .fl-td.r { color:#dc2626; font-weight:600; }
-    .fl-td.dim { color:var(--text-dim); font-size:10px; }
+    .fl-td.p { color:#7c3aed; font-weight:600; }
+    .fl-td.dim { color:#9ca3af; font-size:10px; }
 
-    /* ── Resizable layout ───────────────────────── */
-    #layout { display:flex; flex:1; overflow:hidden; min-height:0; }
-    #left-pane  { display:flex; flex-direction:column; overflow:hidden; min-width:200px; }
-    #divider    { width:5px; background:var(--border); cursor:col-resize; flex-shrink:0; transition:background .15s; }
-    #divider:hover, #divider.dragging { background:var(--accent); }
-    #ts-panel   { flex:1; display:flex; flex-direction:column; overflow:hidden; background:var(--bg); min-width:300px; }
+    /* ── Split pane layout ── */
+    .split-view { display:flex; flex:1; overflow:hidden; min-height:0; }
+    .split-left  { display:flex; flex-direction:column; overflow:hidden; min-width:200px; }
+    .split-divider { width:5px; background:#e2e8f0; cursor:col-resize; flex-shrink:0; transition:background .15s; }
+    .split-divider:hover, .split-divider.dragging { background:#0066cc; }
+    .split-right { flex:1; display:flex; flex-direction:column; overflow:hidden; background:#fff; min-width:300px; }
 
-    /* ── Tearsheet empty state ──────────────────── */
+    /* ── Tearsheet shared ── */
     .ts-empty { flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; }
-    .ts-empty-icon { font-size:32px; opacity:.3; }
-    .ts-empty-msg  { font-size:11px; color:var(--text-muted); }
-
-    /* ── Tearsheet content ──────────────────────── */
-    #ts-content { display:none; flex:1; flex-direction:column; overflow-y:auto; }
-    #ts-content.active { display:flex; }
-
-    .ts-topbar { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; background:var(--bg-panel); border-bottom:1px solid var(--border); flex-shrink:0; }
-    .ts-name   { font-size:13px; font-weight:800; color:var(--accent); letter-spacing:1px; }
-    .ts-meta   { font-size:9px; color:var(--text-muted); margin-top:2px; }
-    .btn-pdf   { background:var(--accent2); color:#fff; border:none; padding:5px 12px; font-size:9px; font-weight:700; cursor:pointer; border-radius:3px; letter-spacing:.5px; font-family:var(--font); }
-    .btn-pdf:hover { opacity:.85; }
-
-    /* ── KPI strip — 6 cols ─────────────────────── */
-    .ts-kpi-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:1px; background:var(--border); flex-shrink:0; }
+    .ts-empty-icon { font-size:36px; opacity:.2; }
+    .ts-empty-msg  { font-size:12px; color:#9ca3af; }
+    .ts-content-panel { display:none; flex:1; flex-direction:column; overflow-y:auto; min-height:0; }
+    .ts-content-panel.active { display:flex; flex-direction:column; }
+    .ts-topbar { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; background:#f8f9fa; border-bottom:1px solid #e5e7eb; flex-shrink:0; }
+    .ts-name   { font-size:13px; font-weight:800; color:#0066cc; letter-spacing:1px; }
+    .ts-meta   { font-size:9px; color:#9ca3af; margin-top:2px; }
+    .ts-kpi-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:1px; background:#e5e7eb; flex-shrink:0; }
     .ts-kpi      { background:#fff; padding:8px 6px; text-align:center; }
     .ts-kpi-lbl  { font-size:8px; color:#6b7280; text-transform:uppercase; letter-spacing:.8px; margin-bottom:3px; }
     .ts-kpi-val  { font-size:15px; font-weight:700; color:#111; }
     .ts-kpi-val.g { color:#16a34a; }
     .ts-kpi-val.r { color:#dc2626; }
-    .ts-kpi-val.a { color:var(--accent); }
-
-    /* ── Plotly chart boxes ─────────────────────── */
+    .ts-kpi-val.a { color:#7c3aed; }
     .ts-charts     { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 12px; flex-shrink:0; }
     .ts-charts.wide{ grid-template-columns:1fr; }
     .ts-chart-box  { background:#fff; border:1px solid #e5e7eb; border-radius:4px; padding:8px 10px; overflow:hidden; }
     .ts-chart-box h6 { font-size:8px; font-weight:700; color:#6b7280; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
-    .ts-plotly     { width:100%; height:220px; }
-    .ts-plotly.sm  { height:170px; }
-
-    /* ── Metrics table ──────────────────────────── */
-    .ts-mets-grid  { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--border); margin:0 12px 12px; }
+    .ts-mets-grid  { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:#e5e7eb; margin:0 12px 12px; }
     .ts-met-row    { display:flex; justify-content:space-between; padding:4px 10px; background:#fff; border-bottom:1px solid #f3f4f6; }
     .ts-met-lbl    { font-size:10px; color:#6b7280; }
     .ts-met-val    { font-size:10px; font-weight:600; color:#111; }
     .ts-met-val.g  { color:#16a34a; }
     .ts-met-val.r  { color:#dc2626; }
     .ts-met-sec    { grid-column:1/-1; font-size:8px; font-weight:700; color:#0066cc; letter-spacing:1px; text-transform:uppercase; padding:6px 10px 2px; background:#eff6ff; border-top:1px solid #dbeafe; }
-
-    /* ── Heatmap ────────────────────────────────── */
-    .ts-heatmap    { margin:0 12px 8px; overflow-x:auto; flex-shrink:0; }
     .ts-sec-hdr    { font-size:9px; font-weight:700; color:#6b7280; letter-spacing:1.2px; text-transform:uppercase; padding:8px 14px 4px; background:#f8f9fa; border-top:1px solid #e5e7eb; border-bottom:1px solid #e5e7eb; margin-top:2px; flex-shrink:0; }
+    .ts-heatmap    { margin:0 12px 8px; overflow-x:auto; flex-shrink:0; }
 
-    /* ── Config bar ─────────────────────────────── */
-    .fl-config { padding:8px 12px; background:var(--bg-panel); border-bottom:1px solid var(--border); flex-shrink:0; display:flex; flex-direction:column; gap:6px; }
+    /* ── Config bar (shared) ── */
+    .fl-config { padding:8px 12px; background:#f8f9fa; border-bottom:1px solid #e5e7eb; flex-shrink:0; display:flex; flex-direction:column; gap:6px; }
     .fl-config-row { display:flex; gap:6px; align-items:flex-end; flex-wrap:wrap; }
-    .fl-config select, .fl-config input { background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:var(--font); font-size:11px; padding:4px 7px; border-radius:3px; outline:none; }
-    .fl-config select:focus, .fl-config input:focus { border-color:var(--accent); }
-    .fl-config label { font-size:9px; color:var(--text-dim); letter-spacing:1px; text-transform:uppercase; display:block; margin-bottom:2px; }
+    .fl-config select, .fl-config input { background:#fff; border:1px solid #d1d5db; color:#374151; font-family:var(--font); font-size:11px; padding:4px 7px; border-radius:3px; outline:none; }
+    .fl-config select:focus, .fl-config input:focus { border-color:#0066cc; }
+    .fl-config label { font-size:9px; color:#6b7280; letter-spacing:1px; text-transform:uppercase; display:block; margin-bottom:2px; }
     .fl-config .fld { display:flex; flex-direction:column; }
-    .fl-prog  { height:3px; background:var(--bg-panel); flex-shrink:0; overflow:hidden; }
-    .fl-prog-fill { height:100%; background:var(--accent); transition:width .3s; width:0; }
-    .btn-run-fl { background:var(--accent2); color:#fff; border:none; padding:6px 16px; font-size:11px; font-weight:700; cursor:pointer; border-radius:3px; font-family:var(--font); white-space:nowrap; }
-    .btn-run-fl:hover { opacity:.85; }
-    .btn-run-fl:disabled { opacity:.4; cursor:not-allowed; }
+    .fl-prog      { height:3px; background:#f1f5f9; flex-shrink:0; overflow:hidden; }
+    .fl-prog-fill { height:100%; background:#0066cc; transition:width .3s; width:0; }
+    .status-bar   { padding:5px 12px; font-size:10px; color:#6b7280; border-bottom:1px solid #f1f5f9; background:#f8f9fa; flex-shrink:0; }
+
+    /* ── Buttons ── */
+    .btn-run-fl  { background:#0066cc; color:#fff; border:none; padding:6px 16px; font-size:11px; font-weight:700; cursor:pointer; border-radius:3px; white-space:nowrap; }
+    .btn-run-fl:hover   { opacity:.88; }
+    .btn-run-fl:disabled{ opacity:.4; cursor:not-allowed; }
+    .btn-promote { background:#16a34a; color:#fff; border:none; padding:4px 10px; font-size:9px; font-weight:700; cursor:pointer; border-radius:3px; }
+    .btn-activate{ background:#7c3aed; color:#fff; border:none; padding:4px 10px; font-size:9px; font-weight:700; cursor:pointer; border-radius:3px; }
+    .btn-sm-action { background:#f8f9fa; color:#374151; border:1px solid #d1d5db; padding:4px 10px; font-size:9px; cursor:pointer; border-radius:3px; }
+    .btn-pdf     { background:#0066cc; color:#fff; border:none; padding:5px 12px; font-size:9px; font-weight:700; cursor:pointer; border-radius:3px; }
+    .btn-csv     { background:#16a34a; color:#fff; border:none; padding:5px 12px; font-size:9px; font-weight:700; cursor:pointer; border-radius:3px; }
+    .btn-img     { background:#7c3aed; color:#fff; border:none; padding:5px 12px; font-size:9px; font-weight:700; cursor:pointer; border-radius:3px; }
+
+    /* ═══════════════════════════════════════════════════════════
+       NAV — 4 main tabs
+    ═══════════════════════════════════════════════════════════ */
+    #nav { display:flex; background:#0d1b2a; border-bottom:1px solid #1e3a5f; flex-shrink:0; height:42px; align-items:stretch; }
+    .nav-brand { padding:0 16px; display:flex; align-items:center; font-size:11px; font-weight:800; color:#c9a84c; letter-spacing:2px; flex-shrink:0; border-right:1px solid #1e3a5f; }
+    .main-tab  { flex:0 0 auto; padding:0 24px; border:none; cursor:pointer; background:transparent; color:#64748b; font-size:10px; font-weight:700; letter-spacing:1px; font-family:var(--font); border-bottom:3px solid transparent; transition:all .15s; text-transform:uppercase; }
+    .main-tab:hover  { color:#94a3b8; background:rgba(255,255,255,0.03); }
+    .main-tab.active { color:#ffffff; border-bottom-color:#c9a84c; background:rgba(255,255,255,0.05); }
+    .main-tab.tab-factor    .tab-dot { background:#7c3aed; }
+    .main-tab.tab-portfolio .tab-dot { background:#0066cc; }
+    .main-tab.tab-results   .tab-dot { background:#16a34a; }
+    .main-tab.tab-tracker   .tab-dot { background:#f59e0b; }
+    .tab-dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+    .nav-right { margin-left:auto; display:flex; align-items:center; gap:8px; padding:0 12px; }
+    .nav-util  { background:none; border:1px solid #1e3a5f; color:#64748b; padding:3px 10px; border-radius:3px; cursor:pointer; font-size:9px; font-family:var(--font); }
+    .nav-util:hover { border-color:#c9a84c; color:#c9a84c; }
+    #gpu-badge { font-size:8px; color:#4ade80; background:rgba(74,222,128,0.1); padding:2px 8px; border-radius:10px; border:1px solid rgba(74,222,128,0.3); }
+
+    /* ═══════════════════════════════════════════════════════════
+       TAB VIEWS
+    ═══════════════════════════════════════════════════════════ */
+    #app-body  { display:flex; flex:1; overflow:hidden; min-height:0; position:relative; }
+    .tab-view  { display:none; flex:1; flex-direction:column; overflow:hidden; min-height:0; position:absolute; inset:0; }
+    .tab-view.active { display:flex; }
+
+    /* ═══════════════════════════════════════════════════════════
+       TRACKER-SPECIFIC
+    ═══════════════════════════════════════════════════════════ */
+    .tracker-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:9px; font-weight:700; }
+    .tracker-badge.buy  { background:#dcfce7; color:#16a34a; border:1px solid #86efac; }
+    .tracker-badge.sell { background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; }
+    .tracker-badge.hold { background:#f3f4f6; color:#6b7280; border:1px solid #d1d5db; }
+    .tracker-badge.new  { background:#ede9fe; color:#7c3aed; border:1px solid #c4b5fd; }
+
     #nav::-webkit-scrollbar { display:none; }
   </style>
 </head>
-<body data-theme="">
+<body data-theme="dark">
 
-<!-- ── Nav ──────────────────────────────────────────────────────────── -->
+<!-- ══════════════════════════════════════════════════════════════
+     NAV BAR
+══════════════════════════════════════════════════════════════ -->
 <nav id="nav">
-  <div class="nav-brand">
-    OBQ FACTOR LAB
-    <div class="view-tabs" id="view-tabs">
-      <button class="view-tab" data-tab="config"   onclick="switchTab('config')">CONFIGURE</button>
-      <button class="view-tab" data-tab="quintile" onclick="switchTab('quintile')">QUINTILE</button>
-      <button class="view-tab active" data-tab="topn" onclick="switchTab('topn')">TOP-N</button>
-      <button class="view-tab" data-tab="results"  onclick="switchTab('results')">RESULTS</button>
-      <button class="view-tab" data-tab="factor"   onclick="switchToFactor()" style="border-bottom:2px solid #7c3aed;color:#7c3aed;margin-left:8px">FACTOR MODELS</button>
-    </div>
-  </div>
+  <div class="nav-brand">OBQ FACTOR LAB</div>
+
+  <button class="main-tab tab-factor active"   onclick="switchMainTab('factor')"   id="tab-btn-factor">
+    <span class="tab-dot" style="background:#7c3aed"></span>FACTOR MODELS
+  </button>
+  <button class="main-tab tab-portfolio" onclick="switchMainTab('portfolio')" id="tab-btn-portfolio">
+    <span class="tab-dot" style="background:#0066cc"></span>PORTFOLIO MODELS
+  </button>
+  <button class="main-tab tab-results"   onclick="switchMainTab('results')"   id="tab-btn-results">
+    <span class="tab-dot" style="background:#16a34a"></span>RESULTS
+  </button>
+  <button class="main-tab tab-tracker"   onclick="switchMainTab('tracker')"   id="tab-btn-tracker">
+    <span class="tab-dot" style="background:#f59e0b"></span>TRACKER
+  </button>
+
   <div class="nav-right">
-    <span id="gpu-indicator" style="font-size:9px;color:var(--text-muted)">GPU —</span>
-    <button class="nav-snap-btn" onclick="snapScreen()" title="Dev screenshot" style="font-size:11px;padding:0 8px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:none;color:var(--text-dim)">SNAP</button>
-    <button class="nav-theme-btn" onclick="toggleTheme()">THEME</button>
+    <span id="gpu-badge">GPU RTX 3090</span>
+    <button class="nav-util" onclick="snapScreen()">SNAP</button>
+    <button class="nav-util" onclick="toggleTheme()">THEME</button>
   </div>
 </nav>
 
-<!-- ── Strategy View (existing — unchanged) ─────────────────────────── -->
-<div id="strategy-view" style="display:flex;flex:1;overflow:hidden;min-height:0">
-<div id="layout" style="display:flex;flex:1;overflow:hidden;min-height:0">
+<!-- ══════════════════════════════════════════════════════════════
+     APP BODY — 4 tab views
+══════════════════════════════════════════════════════════════ -->
+<div id="app-body">
 
-  <!-- LEFT pane -->
-  <div id="left-pane">
-    <!-- Config -->
-    <div class="fl-config" id="config-bar">
-      <div class="fl-config-row">
-        <div class="fld"><label>MODE</label>
-          <select id="cfg-mode" onchange="onModeChange()">
-            <option value="quintile">Quintile Bins</option>
-            <option value="topn" selected>Top-N Portfolio</option>
-          </select>
-        </div>
-        <div class="fld"><label>FACTOR</label>
-          <select id="cfg-factor">
-            <option value="value">Value</option><option value="quality">Quality</option>
-            <option value="growth">Growth</option><option value="finstr">Fin Strength</option>
-            <option value="momentum">Momentum</option><option value="jcn" selected>JCN Composite</option>
-            <option value="qarp">QARP</option><option value="garp">GARP</option>
-            <option value="longeq">LongEQ</option><option value="moat">Moat</option>
-            <option value="rulebreaker">Rulebreaker</option>
-          </select>
-        </div>
-        <div class="fld"><label>START</label><input type="date" id="cfg-start" value="2010-01-31" style="width:120px"/></div>
-        <div class="fld"><label>END</label><input type="date" id="cfg-end" style="width:120px"/></div>
-        <div class="fld"><label>REBALANCE</label>
-          <select id="cfg-rebal"><option value="Monthly" selected>Monthly</option><option value="Quarterly">Quarterly</option><option value="Annual">Annual</option></select>
-        </div>
-        <div class="fld" id="fld-topn"><label>TOP N</label><input type="number" id="cfg-topn" value="30" min="5" max="500" style="width:60px"/></div>
-        <div class="fld" id="fld-bins" style="display:none"><label>BINS</label>
-          <select id="cfg-bins"><option value="5" selected>5</option><option value="10">10</option></select>
-        </div>
-        <div class="fld"><label>MIN $</label><input type="number" id="cfg-minprice" value="2" min="0" step="0.5" style="width:55px"/></div>
-        <div class="fld"><label>COSTS bps</label><input type="number" id="cfg-costs" value="15" min="0" style="width:55px"/></div>
-        <button class="btn-run-fl" id="run-btn" onclick="startRun()">&#9654; RUN</button>
-        <button class="btn-sm" style="background:var(--bg-panel2);border-color:var(--accent);color:var(--accent)" onclick="startSPY()" title="SPY benchmark">&#9654; SPY</button>
-      </div>
-    </div>
+<!-- ─── TAB 1: FACTOR MODELS ─────────────────────────────────── -->
+<div class="tab-view active" id="view-factor">
 
-    <div class="fl-prog"><div class="fl-prog-fill" id="prog-fill"></div></div>
-    <div class="status-bar" id="status-bar">Ready</div>
-
-    <!-- Table header -->
-    <div class="fl-tbl-header">
-      <div class="fl-th" style="flex:0 0 75px" onclick="sortBy('run_label')">RUN <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 55px" onclick="sortBy('cagr')">CAGR <span class="fl-sort-arrow">&#9660;</span></div>
-      <div class="fl-th" style="flex:0 0 50px" onclick="sortBy('sharpe')">SHRPE <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 55px" onclick="sortBy('max_dd')">MAX DD <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 48px" onclick="sortBy('win_rate_monthly')">WIN% <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 48px" onclick="sortBy('sortino')">SRTN <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 48px" onclick="sortBy('ann_vol')">VOL <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 48px" onclick="sortBy('calmar')">CALM <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 55px" onclick="sortBy('surefire_ratio')">SUREFIRE <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 48px" onclick="sortBy('omega')">OMEGA <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 45px" onclick="sortBy('lake_ratio')">LAKE <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 40px" onclick="sortBy('n_periods')">N MO <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 45px" onclick="sortBy('profit_factor')">PF <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 50px" onclick="sortBy('system_score')">SYSSC <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 42px" onclick="sortBy('equity_r2')">EQ R2 <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:0 0 38px" onclick="sortBy('elapsed_s')">TIME <span class="fl-sort-arrow"></span></div>
-      <div class="fl-th" style="flex:1">STATUS</div>
-    </div>
-
-    <!-- Table body -->
-    <div class="fl-tbl-body" id="tbl-body">
-      <div class="log-empty" id="tbl-empty">No runs yet — click RUN to start</div>
-    </div>
-  </div>
-
-  <!-- Draggable divider -->
-  <div id="divider"></div>
-
-  <!-- RIGHT: tearsheet -->
-  <div id="ts-panel">
-    <div class="ts-empty" id="ts-empty">
-      <div class="ts-empty-icon">&#9672;</div>
-      <div class="ts-empty-msg">Click a run in the table to view tearsheet</div>
-    </div>
-    <div id="ts-content"></div>
-  </div>
-
-</div><!-- /#layout -->
-</div><!-- /#strategy-view -->
-
-<!-- ── Factor Models View ───────────────────────────────────────────── -->
-<div id="factor-view" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0">
-
-  <!-- Factor config bar -->
-  <div class="fl-config" style="flex-shrink:0">
-    <div class="fl-config-row" style="flex-wrap:wrap;gap:6px;align-items:flex-end">
-
-      <div class="fld">
-        <label>SCORE / FACTOR</label>
+  <!-- Config bar -->
+  <div class="fl-config">
+    <div class="fl-config-row">
+      <div class="fld"><label>SCORE / FACTOR</label>
         <select id="fl-score-col" onchange="flScoreChanged()" style="width:170px">
           <option value="jcn_full_composite">JCN Composite</option>
         </select>
       </div>
-
-      <div class="fld">
-        <label>START</label>
-        <input type="date" id="fl-start-date" value="2005-01-31" style="width:120px"/>
-      </div>
-      <div class="fld">
-        <label>END</label>
-        <input type="date" id="fl-end-date" style="width:120px"/>
-      </div>
-
-      <div class="fld">
-        <label>BUCKETS</label>
+      <div class="fld"><label>START</label><input type="date" id="fl-start-date" value="2005-01-31" style="width:120px"/></div>
+      <div class="fld"><label>END</label><input type="date" id="fl-end-date" style="width:120px"/></div>
+      <div class="fld"><label>BUCKETS</label>
         <select id="fl-n-buckets" style="width:60px">
-          <option value="5" selected>5</option>
-          <option value="10">10</option>
-          <option value="20">20</option>
+          <option value="5" selected>5</option><option value="10">10</option><option value="20">20</option>
         </select>
       </div>
-
-      <div class="fld">
-        <label>HOLD (mo)</label>
+      <div class="fld"><label>HOLD (mo)</label>
         <select id="fl-hold-months" style="width:65px">
-          <option value="1">1 mo</option>
-          <option value="3">3 mo</option>
-          <option value="6" selected>6 mo</option>
-          <option value="12">12 mo</option>
+          <option value="1">1 mo</option><option value="3">3 mo</option>
+          <option value="6" selected>6 mo</option><option value="12">12 mo</option>
         </select>
       </div>
-
-      <div class="fld">
-        <label>REBALANCE</label>
+      <div class="fld"><label>REBALANCE</label>
         <select id="fl-rebal-freq" style="width:100px">
-          <option value="monthly">Monthly</option>
-          <option value="quarterly">Quarterly</option>
-          <option value="semi-annual" selected>Semi-Annual</option>
-          <option value="annual">Annual</option>
+          <option value="monthly">Monthly</option><option value="quarterly">Quarterly</option>
+          <option value="semi-annual" selected>Semi-Annual</option><option value="annual">Annual</option>
         </select>
       </div>
-
-      <div class="fld">
-        <label>CAP TIER</label>
+      <div class="fld"><label>CAP TIER</label>
         <select id="fl-cap-tier" style="width:80px">
-          <option value="all" selected>All Cap</option>
-          <option value="mega">Mega (&gt;$200B)</option>
-          <option value="large">Large ($10-200B)</option>
-          <option value="mid">Mid ($2-10B)</option>
-          <option value="small">Small ($300M-2B)</option>
-          <option value="micro">Micro (&lt;$300M)</option>
+          <option value="all" selected>All Cap</option><option value="mega">Mega</option>
+          <option value="large">Large</option><option value="mid">Mid</option>
+          <option value="small">Small</option><option value="micro">Micro</option>
         </select>
       </div>
-
-      <div class="fld">
-        <label>MIN PRICE $</label>
-        <input type="number" id="fl-min-price" value="5" min="0" step="1" style="width:55px"/>
-      </div>
-
-      <div class="fld">
-        <label>MIN ADV $</label>
-        <select id="fl-min-adv" style="width:90px">
-          <option value="500000">$500K</option>
-          <option value="1000000" selected>$1M</option>
-          <option value="5000000">$5M</option>
-          <option value="10000000">$10M</option>
+      <div class="fld"><label>MIN $ </label><input type="number" id="fl-min-price" value="5" min="0" step="1" style="width:50px"/></div>
+      <div class="fld"><label>MIN ADV</label>
+        <select id="fl-min-adv" style="width:80px">
+          <option value="500000">$500K</option><option value="1000000" selected>$1M</option>
+          <option value="5000000">$5M</option><option value="10000000">$10M</option>
         </select>
       </div>
-
-      <div class="fld">
-        <label>COSTS bps</label>
-        <input type="number" id="fl-cost-bps" value="15" min="0" style="width:50px"/>
-      </div>
-
+      <div class="fld"><label>COST bps</label><input type="number" id="fl-cost-bps" value="15" min="0" style="width:50px"/></div>
       <button class="btn-run-fl" id="fl-run-btn" onclick="flRunBacktest()" style="background:#7c3aed">&#9654; RUN FACTOR</button>
     </div>
-    <div id="fl-score-info" style="font-size:9px;color:var(--text-dim);margin-top:4px;padding-left:2px">Select a score to see date range</div>
+    <div id="fl-score-info" style="font-size:9px;color:#9ca3af;padding-top:2px">Select a score to see date range</div>
   </div>
-
   <div class="fl-prog"><div class="fl-prog-fill" id="fl-prog-fill"></div></div>
-  <div class="status-bar" id="fl-status-bar">Select a factor score and click RUN FACTOR</div>
+  <div class="status-bar" id="fl-status-bar">Select a factor and click RUN FACTOR</div>
 
-  <!-- Factor results split: left=runs table, right=factor tearsheet -->
-  <div style="display:flex;flex:1;overflow:hidden;min-height:0">
-
-    <!-- Left: factor runs table -->
-    <div id="fl-left-pane" style="display:flex;flex-direction:column;overflow:hidden;min-width:500px;width:520px;flex-shrink:0">
-
-      <!-- Factor table header -->
+  <div class="split-view">
+    <div class="split-left" id="fl-left-pane" style="width:520px;flex-shrink:0">
       <div class="fl-tbl-header">
-        <div class="fl-th" style="flex:0 0 80px" onclick="flSortBy('run_label')">RUN</div>
+        <div class="fl-th" style="flex:0 0 28px">ID</div>
         <div class="fl-th" style="flex:0 0 65px" onclick="flSortBy('quintile_spread_cagr')">SPREAD&#9660;</div>
         <div class="fl-th" style="flex:0 0 50px" onclick="flSortBy('ic_mean')">IC</div>
         <div class="fl-th" style="flex:0 0 48px" onclick="flSortBy('icir')">ICIR</div>
         <div class="fl-th" style="flex:0 0 48px" onclick="flSortBy('ic_hit_rate')">HIT%</div>
         <div class="fl-th" style="flex:0 0 52px" onclick="flSortBy('monotonicity_score')">MONO%</div>
-        <div class="fl-th" style="flex:0 0 50px" onclick="flSortBy('q1_cagr')">Q1 CAGR</div>
+        <div class="fl-th" style="flex:0 0 55px" onclick="flSortBy('q1_cagr')">Q1 CAGR</div>
         <div class="fl-th" style="flex:0 0 48px" onclick="flSortBy('q1_sharpe')">Q1 SH</div>
         <div class="fl-th" style="flex:1">LABEL</div>
       </div>
-
       <div class="fl-tbl-body" id="fl-tbl-body">
-        <div class="log-empty" id="fl-tbl-empty">No factor runs yet — configure and click RUN FACTOR</div>
+        <div class="log-empty" id="fl-tbl-empty" style="padding:20px;text-align:center;color:#9ca3af;font-size:11px">No factor runs yet — configure and click RUN FACTOR</div>
       </div>
     </div>
-
-    <!-- Draggable divider for factor view -->
-    <div id="fl-divider" style="width:5px;background:var(--border);cursor:col-resize;flex-shrink:0;transition:background .15s"></div>
-
-    <!-- Right: factor tearsheet -->
-    <div id="fl-ts-panel" style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:#fff;min-width:300px">
+    <div class="split-divider" id="fl-divider"></div>
+    <div class="split-right">
       <div class="ts-empty" id="fl-ts-empty">
-        <div class="ts-empty-icon">&#9672;</div>
+        <div class="ts-empty-icon">&#9652;</div>
         <div class="ts-empty-msg">Run a factor backtest to see the quintile tearsheet</div>
       </div>
-      <div id="fl-ts-content" style="display:none;flex:1;flex-direction:column;overflow-y:auto"></div>
+      <div class="ts-content-panel" id="fl-ts-content"></div>
+    </div>
+  </div>
+</div><!-- /#view-factor -->
+
+<!-- ─── TAB 2: PORTFOLIO MODELS ──────────────────────────────── -->
+<div class="tab-view" id="view-portfolio">
+
+  <!-- Config bar (wraps existing app.js controls) -->
+  <div class="fl-config" id="config-bar">
+    <div class="fl-config-row">
+      <div class="fld"><label>MODE</label>
+        <select id="cfg-mode" onchange="onModeChange()">
+          <option value="quintile">Quintile Bins</option>
+          <option value="topn" selected>Top-N Portfolio</option>
+        </select>
+      </div>
+      <div class="fld"><label>FACTOR</label>
+        <select id="cfg-factor">
+          <option value="value">Value</option><option value="quality">Quality</option>
+          <option value="growth">Growth</option><option value="finstr">Fin Strength</option>
+          <option value="momentum">Momentum</option><option value="jcn" selected>JCN Composite</option>
+          <option value="qarp">QARP</option><option value="garp">GARP</option>
+          <option value="longeq">LongEQ</option><option value="moat">Moat</option>
+          <option value="rulebreaker">Rulebreaker</option>
+        </select>
+      </div>
+      <div class="fld"><label>START</label><input type="date" id="cfg-start" value="2010-01-31" style="width:120px"/></div>
+      <div class="fld"><label>END</label><input type="date" id="cfg-end" style="width:120px"/></div>
+      <div class="fld"><label>REBALANCE</label>
+        <select id="cfg-rebal"><option value="Monthly" selected>Monthly</option><option value="Quarterly">Quarterly</option><option value="Annual">Annual</option></select>
+      </div>
+      <div class="fld" id="fld-topn"><label>TOP N</label><input type="number" id="cfg-topn" value="30" min="5" max="500" style="width:60px"/></div>
+      <div class="fld" id="fld-bins" style="display:none"><label>BINS</label>
+        <select id="cfg-bins"><option value="5" selected>5</option><option value="10">10</option></select>
+      </div>
+      <div class="fld"><label>MIN $</label><input type="number" id="cfg-minprice" value="2" min="0" step="0.5" style="width:55px"/></div>
+      <div class="fld"><label>COST bps</label><input type="number" id="cfg-costs" value="15" min="0" style="width:55px"/></div>
+      <button class="btn-run-fl" id="run-btn" onclick="startRun()">&#9654; RUN</button>
+      <button class="btn-sm-action" onclick="startSPY()" title="SPY B&H benchmark">&#9654; SPY</button>
+    </div>
+  </div>
+  <div class="fl-prog"><div class="fl-prog-fill" id="prog-fill"></div></div>
+  <div class="status-bar" id="status-bar">Ready — select factor and click RUN</div>
+
+  <div class="split-view">
+    <div class="split-left" id="left-pane" style="width:600px;flex-shrink:0">
+      <div class="fl-tbl-header">
+        <div class="fl-th" style="flex:0 0 75px" onclick="sortBy('run_label')">RUN</div>
+        <div class="fl-th" style="flex:0 0 55px" onclick="sortBy('cagr')">CAGR &#9660;</div>
+        <div class="fl-th" style="flex:0 0 48px" onclick="sortBy('sharpe')">SHRPE</div>
+        <div class="fl-th" style="flex:0 0 55px" onclick="sortBy('max_dd')">MAX DD</div>
+        <div class="fl-th" style="flex:0 0 48px" onclick="sortBy('win_rate_monthly')">WIN%</div>
+        <div class="fl-th" style="flex:0 0 48px" onclick="sortBy('sortino')">SRTN</div>
+        <div class="fl-th" style="flex:0 0 48px" onclick="sortBy('ann_vol')">VOL</div>
+        <div class="fl-th" style="flex:0 0 48px" onclick="sortBy('calmar')">CALM</div>
+        <div class="fl-th" style="flex:0 0 55px" onclick="sortBy('surefire_ratio')">SUREFIRE</div>
+        <div class="fl-th" style="flex:0 0 42px" onclick="sortBy('equity_r2')">EQ R2</div>
+        <div class="fl-th" style="flex:0 0 38px" onclick="sortBy('elapsed_s')">TIME</div>
+        <div class="fl-th" style="flex:1">STATUS</div>
+      </div>
+      <div class="fl-tbl-body" id="tbl-body">
+        <div class="log-empty" id="tbl-empty" style="padding:20px;text-align:center;color:#9ca3af;font-size:11px">No runs yet — click RUN to start a backtest</div>
+      </div>
+    </div>
+    <div class="split-divider" id="divider"></div>
+    <div class="split-right" id="ts-panel">
+      <div class="ts-empty" id="ts-empty">
+        <div class="ts-empty-icon">&#9672;</div>
+        <div class="ts-empty-msg">Click a run in the table to view tearsheet</div>
+      </div>
+      <div class="ts-content-panel" id="ts-content"></div>
+    </div>
+  </div>
+</div><!-- /#view-portfolio -->
+
+<!-- ─── TAB 3: RESULTS ───────────────────────────────────────── -->
+<div class="tab-view" id="view-results">
+
+  <div class="fl-config">
+    <div class="fl-config-row" style="justify-content:space-between;width:100%">
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:12px;font-weight:700;color:#374151">Saved Models</span>
+        <span id="res-count-badge" style="background:#eff6ff;color:#0066cc;border:1px solid #bfdbfe;border-radius:10px;padding:2px 8px;font-size:9px;font-weight:700">0 models</span>
+        <button class="btn-sm-action" onclick="resRefresh()">&#8635; Refresh</button>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <label style="font-size:9px;color:#6b7280">TYPE</label>
+        <select id="res-filter-type" onchange="resRefresh()" style="font-size:10px;padding:3px 6px;border:1px solid #d1d5db;border-radius:3px">
+          <option value="all">All Models</option>
+          <option value="factor">Factor Models (FM-)</option>
+          <option value="portfolio">Portfolio Models (PS-)</option>
+        </select>
+        <label style="font-size:9px;color:#6b7280">SORT</label>
+        <select id="res-sort-col" onchange="resRefresh()" style="font-size:10px;padding:3px 6px;border:1px solid #d1d5db;border-radius:3px">
+          <option value="icir">ICIR</option>
+          <option value="quintile_spread_cagr">Q Spread</option>
+          <option value="q1_cagr">Q1 CAGR</option>
+          <option value="created_at">Date</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="status-bar" id="res-status">Loading results from strategy bank...</div>
+
+  <div class="split-view">
+    <div class="split-left" id="res-left-pane" style="width:560px;flex-shrink:0">
+      <div class="fl-tbl-header">
+        <div class="fl-th" style="flex:0 0 120px">STRATEGY ID</div>
+        <div class="fl-th" style="flex:0 0 48px">TYPE</div>
+        <div class="fl-th" style="flex:0 0 60px">SPREAD</div>
+        <div class="fl-th" style="flex:0 0 48px">IC</div>
+        <div class="fl-th" style="flex:0 0 44px">ICIR</div>
+        <div class="fl-th" style="flex:0 0 50px">Q1 CAGR</div>
+        <div class="fl-th" style="flex:0 0 48px">Q1 SH</div>
+        <div class="fl-th" style="flex:0 0 60px">SAVED</div>
+        <div class="fl-th" style="flex:1">LABEL</div>
+      </div>
+      <div class="fl-tbl-body" id="res-tbl-body">
+        <div class="log-empty" id="res-tbl-empty" style="padding:20px;text-align:center;color:#9ca3af;font-size:11px">Loading...</div>
+      </div>
+    </div>
+    <div class="split-divider" id="res-divider"></div>
+    <div class="split-right">
+      <div class="ts-empty" id="res-ts-empty">
+        <div class="ts-empty-icon">&#9670;</div>
+        <div class="ts-empty-msg">Select a saved model to view its tearsheet</div>
+        <div style="margin-top:16px;display:flex;gap:8px">
+          <button class="btn-activate" onclick="resActivateSelected()" id="res-activate-btn" style="display:none">ACTIVATE IN TRACKER</button>
+        </div>
+      </div>
+      <div class="ts-content-panel" id="res-ts-content"></div>
+    </div>
+  </div>
+</div><!-- /#view-results -->
+
+<!-- ─── TAB 4: TRACKER ───────────────────────────────────────── -->
+<div class="tab-view" id="view-tracker">
+
+  <div class="fl-config">
+    <div class="fl-config-row" style="justify-content:space-between;width:100%">
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:12px;font-weight:700;color:#374151">Production Tracker</span>
+        <span id="trk-strategy-badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:10px;padding:2px 8px;font-size:9px;font-weight:700">No active strategy</span>
+        <span id="trk-rebal-badge" style="font-size:9px;color:#6b7280;display:none"></span>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn-sm-action" onclick="trkRefresh()">&#8635; Refresh Ranks</button>
+        <button class="btn-run-fl" onclick="trkGenerateReport()" style="background:#f59e0b;display:none" id="trk-report-btn">&#9993; Generate Report</button>
+      </div>
+    </div>
+  </div>
+  <div class="status-bar" id="trk-status">No active strategy — go to Results tab and click ACTIVATE IN TRACKER</div>
+
+  <div class="split-view">
+    <!-- Left: current positions table -->
+    <div class="split-left" id="trk-left-pane" style="width:560px;flex-shrink:0">
+      <div style="padding:6px 12px;background:#1e3a5f;color:#c9a84c;font-size:9px;font-weight:700;letter-spacing:1px;flex-shrink:0">
+        CURRENT POSITIONS
+      </div>
+      <div class="fl-tbl-header">
+        <div class="fl-th" style="flex:0 0 80px">SYMBOL</div>
+        <div class="fl-th" style="flex:0 0 55px">CURR RANK</div>
+        <div class="fl-th" style="flex:0 0 55px">SCORE</div>
+        <div class="fl-th" style="flex:0 0 60px">ENTRY DATE</div>
+        <div class="fl-th" style="flex:0 0 55px">ENTRY $</div>
+        <div class="fl-th" style="flex:0 0 55px">CURR $</div>
+        <div class="fl-th" style="flex:0 0 55px">P&L %</div>
+        <div class="fl-th" style="flex:0 0 60px">ACTION</div>
+        <div class="fl-th" style="flex:1">SECTOR</div>
+      </div>
+      <div class="fl-tbl-body" id="trk-pos-body">
+        <div class="log-empty" id="trk-pos-empty" style="padding:20px;text-align:center;color:#9ca3af;font-size:11px">
+          No active positions<br/>Activate a strategy from Results tab
+        </div>
+      </div>
+
+      <!-- Rebalance candidates -->
+      <div style="padding:6px 12px;background:#1e3a5f;color:#c9a84c;font-size:9px;font-weight:700;letter-spacing:1px;flex-shrink:0;margin-top:4px">
+        TODAY'S REBALANCE CANDIDATES
+      </div>
+      <div class="fl-tbl-header">
+        <div class="fl-th" style="flex:0 0 80px">SYMBOL</div>
+        <div class="fl-th" style="flex:0 0 55px">NEW RANK</div>
+        <div class="fl-th" style="flex:0 0 55px">SCORE</div>
+        <div class="fl-th" style="flex:0 0 60px">ACTION</div>
+        <div class="fl-th" style="flex:0 0 55px">TARGET WT</div>
+        <div class="fl-th" style="flex:1">SECTOR</div>
+      </div>
+      <div class="fl-tbl-body" id="trk-rebal-body" style="max-height:200px">
+        <div class="log-empty" id="trk-rebal-empty" style="padding:12px;text-align:center;color:#9ca3af;font-size:11px">No rebalance due</div>
+      </div>
     </div>
 
-  </div>
-</div><!-- /#factor-view -->
+    <div class="split-divider" id="trk-divider"></div>
 
+    <!-- Right: strategy summary + report preview -->
+    <div class="split-right">
+      <div class="ts-empty" id="trk-ts-empty">
+        <div class="ts-empty-icon">&#128200;</div>
+        <div class="ts-empty-msg">Activate a strategy from Results to start tracking</div>
+        <div style="font-size:10px;color:#9ca3af;margin-top:8px;text-align:center;max-width:280px">
+          The Tracker shows live positions, daily rank changes, and generates the portfolio manager email report
+        </div>
+      </div>
+      <div class="ts-content-panel" id="trk-ts-content"></div>
+    </div>
+  </div>
+</div><!-- /#view-tracker -->
+
+</div><!-- /#app-body -->
+
+<!-- ══════════════════════════════════════════════════════════════
+     SCRIPTS
+══════════════════════════════════════════════════════════════ -->
 <script src="/static/js/plotly.min.js"></script>
 <script src="/static/js/tearsheet.js"></script>
 <script src="/static/js/factor_tearsheet.js"></script>
 <script src="/static/js/app.js"></script>
 <script src="/static/js/factor_lab.js"></script>
-
-<script>
-// ── Factor Models tab toggle ──────────────────────────────────────────
-function switchToFactor() {
-  document.getElementById("strategy-view").style.display = "none";
-  document.getElementById("factor-view").style.display  = "flex";
-  // Remove active from all strategy tabs
-  document.querySelectorAll(".view-tab").forEach(t => t.classList.remove("active"));
-  document.querySelector("[data-tab='factor']").classList.add("active");
-  // Init factor lab
-  if (typeof factorLabInit === "function") factorLabInit();
-}
-
-function switchBackToStrategy() {
-  document.getElementById("strategy-view").style.display = "flex";
-  document.getElementById("factor-view").style.display  = "none";
-}
-
-// Override switchTab to hide factor view when switching to strategy tabs
-const _origSwitchTab = window.switchTab;
-window.switchTab = function(tab) {
-  document.getElementById("strategy-view").style.display = "flex";
-  document.getElementById("factor-view").style.display  = "none";
-  if (_origSwitchTab) _origSwitchTab(tab);
-};
-
-// ── Factor view divider ───────────────────────────────────────────────
-(function() {
-  const fdiv = document.getElementById("fl-divider");
-  const fleft = document.getElementById("fl-left-pane");
-  if (!fdiv || !fleft) return;
-  let drag = false, sx, sw;
-  fdiv.addEventListener("mousedown", e => {
-    drag=true; sx=e.clientX; sw=fleft.offsetWidth;
-    document.body.style.cursor="col-resize"; document.body.style.userSelect="none";
-  });
-  document.addEventListener("mousemove", e => {
-    if (!drag) return;
-    const w = Math.max(350, Math.min(sw+e.clientX-sx, window.innerWidth-350));
-    fleft.style.width = w+"px";
-  });
-  document.addEventListener("mouseup", () => {
-    if (!drag) return; drag=false;
-    document.body.style.cursor=""; document.body.style.userSelect="";
-    document.querySelectorAll("#fl-ts-content [id^=flt_]").forEach(d => {
-      try { if(d.data) Plotly.Plots.resize(d); } catch(e){}
-    });
-  });
-})();
-
-// ── Strategy view resizable divider ──────────────────────────────────────────
-(function() {
-  const div = document.getElementById("divider");
-  const left = document.getElementById("left-pane");
-  let dragging = false, startX, startW;
-
-  div.addEventListener("mousedown", e => {
-    dragging = true; startX = e.clientX; startW = left.offsetWidth;
-    div.classList.add("dragging");
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  });
-  document.addEventListener("mousemove", e => {
-    if (!dragging) return;
-    const w = Math.max(200, Math.min(startW + e.clientX - startX, window.innerWidth - 350));
-    left.style.width = w + "px";
-    left.style.flex = "none";
-  });
-  document.addEventListener("mouseup", () => {
-    if (!dragging) return;
-    dragging = false;
-    div.classList.remove("dragging");
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-    // Trigger Plotly resize
-    document.querySelectorAll(".ts-plotly").forEach(el => {
-      if (el.id) try { Plotly.Plots.resize(el); } catch(e) {}
-    });
-  });
-})();
-</script>
+<script src="/static/js/results_lab.js"></script>
+<script src="/static/js/tracker_lab.js"></script>
+<script src="/static/js/tabs.js"></script>
 </body>
 </html>
