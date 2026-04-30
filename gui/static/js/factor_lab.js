@@ -271,61 +271,83 @@
     }
     function sec(title) {
       const h = document.createElement("div");
-      h.style.cssText = "font-size:9px;font-weight:700;color:#6b7280;letter-spacing:1.2px;text-transform:uppercase;padding:8px 14px 4px;background:#f8f9fa;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;flex-shrink:0";
+      h.className = "ts-sec-hdr";
       h.textContent = title; tsContent.appendChild(h);
     }
 
-    // ── Chart sections ─────────────────────────────────────────────────────────
-    sec("QUINTILE PERFORMANCE");
-    const r1 = chartRow(false);
-    const {box:qbarBox, id:qbarId} = chartBox("CAGR BY QUINTILE", 220);
-    r1.appendChild(qbarBox);
-    const {box:ceqBox, id:ceqId}   = chartBox("CUMULATIVE EQUITY BY QUINTILE", 220);
-    r1.appendChild(ceqBox);
+    // ── 1. TORTORIELLO MAIN TABLE (Figure 2.3) ──────────────────────────────
+    sec("QUINTILE PERFORMANCE SUMMARY — " + result.dates?.[0]?.slice(0,4) + " – " + result.dates?.[result.dates.length-1]?.slice(0,4));
+    if (typeof ftBuildMainTable === "function") {
+      tsContent.appendChild(ftBuildMainTable(result));
+    }
 
+    // ── 2. Excess Returns bar + Rolling 3Y chart ───────────────────────────
+    const r_excess = chartRow(false);
+    const {box:exBox, id:exId} = chartBox("AVERAGE EXCESS RETURN VS. UNIVERSE", 220);
+    r_excess.appendChild(exBox);
+    const {box:r3yBox, id:r3yId} = chartBox("ROLLING 3-YEAR ANNUALIZED EXCESS RETURNS: TOP vs BOTTOM", 220);
+    r_excess.appendChild(r3yBox);
+
+    // ── 3. IC ANALYSIS ──────────────────────────────────────────────────────
     sec("IC ANALYSIS");
     const r2 = chartRow(false);
     const {box:icBox, id:icId}     = chartBox("IC (INFORMATION COEFFICIENT) OVER TIME", 180);
     r2.appendChild(icBox);
-    const {box:spBox, id:spId}     = chartBox("Q1 - Q5 SPREAD (CUMULATIVE)", 180);
+    const {box:spBox, id:spId}     = chartBox("Q1 - Q5 SPREAD (CUMULATIVE GROWTH)", 180);
     r2.appendChild(spBox);
+
+    // ── 4. CUMULATIVE EQUITY + PERIOD HEATMAP ─────────────────────────────
+    sec("EQUITY CURVES & PERIOD RETURNS");
+    const r1 = chartRow(false);
+    const {box:ceqBox, id:ceqId} = chartBox("CUMULATIVE EQUITY BY QUINTILE", 220);
+    r1.appendChild(ceqBox);
+    const {box:qbarBox, id:qbarId} = chartBox("CAGR BY QUINTILE (BAR)", 220);
+    r1.appendChild(qbarBox);
 
     sec("PERIOD RETURNS HEATMAP");
     const r3 = chartRow(true);
-    const {box:hmBox, id:hmId}     = chartBox("", 200);
+    const {box:hmBox, id:hmId} = chartBox("", 200);
     r3.appendChild(hmBox);
 
+    // ── 5. ANNUAL RETURNS ─────────────────────────────────────────────────
     sec("ANNUAL RETURNS BY QUINTILE");
     const r4 = chartRow(true);
-    const {box:annBox, id:annId}   = chartBox("", 200);
+    const {box:annBox, id:annId} = chartBox("", 200);
     r4.appendChild(annBox);
 
+    // ── 6. SECTOR TABLES (Figure 2.4) ────────────────────────────────────
     if (result.sector_attribution && result.sector_attribution.length > 0) {
-      sec("SECTOR ATTRIBUTION");
+      sec("SECTOR SUMMARY — TOP & BOTTOM QUINTILE");
+      if (typeof ftBuildSectorTables === "function") {
+        tsContent.appendChild(ftBuildSectorTables(result));
+      }
+      // Sector bar chart
       const r5 = chartRow(true);
-      const {box:secBox, id:secId} = chartBox("AVG RETURN BY SECTOR & QUINTILE", 240);
+      const {box:secBox, id:secId} = chartBox("AVERAGE EXCESS RETURN BY SECTOR", 240);
       r5.appendChild(secBox);
       setTimeout(() => {
         try { ftDrawSectorAttribution(secId, result.sector_attribution, n); } catch(e){}
       }, 400);
     }
 
-    // ── Metrics table ─────────────────────────────────────────────────────────
-    sec("FACTOR METRICS");
+    // ── 7. FULL METRICS TABLE ─────────────────────────────────────────────
+    sec("FULL FACTOR METRICS");
     tsContent.appendChild(ftBuildMetricsTable(fm, buckets, result.bucket_metrics || {}));
 
-    // ── Draw all charts after DOM settles ──────────────────────────────────────
+    // ── Draw all Plotly charts after DOM settles ────────────────────────────
     setTimeout(() => {
-      try { ftDrawQuintileBar(qbarId, buckets, result.bucket_metrics, 0); } catch(e){ console.error("qbar",e); }
-      try { ftDrawCumulativeEquity(ceqId, result.dates||[], buckets, result.bucket_equity||{}); } catch(e){ console.error("ceq",e); }
+      try { ftDrawExcessReturnBar(exId, buckets, result.tortoriello||{}, result.universe_metrics||{}); } catch(e){ console.error("excess",e); }
+      try { ftDrawRolling3YTopBottom(r3yId, buckets, result.tortoriello||{}); } catch(e){ console.error("r3y",e); }
       try { ftDrawIC(icId, result.ic_data||[]); } catch(e){ console.error("ic",e); }
       try { ftDrawSpread(spId, result.dates||[], result.bucket_equity||{}, n); } catch(e){ console.error("spread",e); }
+      try { ftDrawCumulativeEquity(ceqId, result.dates||[], buckets, result.bucket_equity||{}); } catch(e){ console.error("ceq",e); }
+      try { ftDrawQuintileBar(qbarId, buckets, result.bucket_metrics, 0); } catch(e){ console.error("qbar",e); }
       try { ftDrawPeriodHeatmap(hmId, result.period_data||[], n); } catch(e){ console.error("hm",e); }
       try { ftDrawAnnualBars(annId, result.annual_ret_by_bucket||{}, n); } catch(e){ console.error("ann",e); }
-    }, 150);
+    }, 200);
 
     // Force Plotly resize after layout completes
-    [500, 1000, 1800].forEach(delay => setTimeout(() => {
+    [600, 1200, 2000].forEach(delay => setTimeout(() => {
       document.querySelectorAll("#fl-ts-content [id^=flt_]").forEach(d => {
         try { if(d.data) Plotly.Plots.resize(d); } catch(e){}
       });
@@ -349,5 +371,95 @@
     const el = document.getElementById("fl-status-bar");
     if (el) el.textContent = msg;
   }
+
+  // ── Load saved models from bank into bottom-left panel ──────────────────────
+  window.flLoadBank = async function () {
+    const body  = document.getElementById("fl-bank-body");
+    const empty = document.getElementById("fl-bank-empty");
+    const count = document.getElementById("fl-bank-count");
+    if (!body) return;
+
+    const r = await fetch("/api/factor/bank").then(r => r.json()).catch(() => null);
+    if (!r || !r.models) {
+      if (empty) empty.textContent = "Error loading bank";
+      return;
+    }
+
+    const models = r.models || [];
+    if (count) count.textContent = models.length + " saved";
+
+    if (!models.length) {
+      if (empty) { empty.style.display="block"; empty.textContent = "No saved models yet — run a backtest"; }
+      body.innerHTML = "";
+      return;
+    }
+    if (empty) empty.style.display = "none";
+    body.innerHTML = "";
+
+    function pct(v,d=1) { if(v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
+    function num(v,d=2) { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
+
+    models.forEach(m => {
+      const tr = document.createElement("div");
+      tr.className = "fl-tr";
+      tr.style.cssText = "font-size:10px";
+      const spread = m.quintile_spread_cagr;
+      const sCol = spread!=null?(spread>=0.05?"g":spread>=0?"":"r"):"";
+      tr.innerHTML = `
+        <div class="fl-td dim" style="flex:0 0 115px;font-family:monospace;font-size:9px">${(m.strategy_id||"").slice(0,16)}</div>
+        <div class="fl-td ${sCol}" style="flex:0 0 60px">${pct(spread,2)}</div>
+        <div class="fl-td" style="flex:0 0 44px">${num(m.icir,2)}</div>
+        <div class="fl-td" style="flex:0 0 44px">${m.ic_hit_rate!=null?((m.ic_hit_rate)*100).toFixed(0)+"%":"—"}</div>
+        <div class="fl-td ${(m.q1_cagr||0)>=0?"g":"r"}" style="flex:0 0 50px">${pct(m.q1_cagr,1)}</div>
+        <div class="fl-td dim" style="flex:1;font-size:9px">${(m.run_label||"").slice(0,35)}</div>
+      `;
+      // Clicking a saved model loads it into the tearsheet
+      tr.onclick = async () => {
+        document.querySelectorAll("#fl-bank-body .fl-tr").forEach(r => r.classList.remove("active"));
+        tr.classList.add("active");
+        _flSetStatus("Loading saved model " + m.strategy_id + "...");
+        // Fetch full result from bank
+        const full = await fetch("/api/factor/bank/"+m.strategy_id).then(r=>r.json()).catch(()=>null);
+        if (!full) { _flSetStatus("Error loading " + m.strategy_id); return; }
+        // Reconstruct a run object from bank data
+        const runObj = {
+          run_id: m.strategy_id,
+          run_label: m.run_label || m.strategy_id,
+          status: "complete",
+          factor_metrics: m,
+          result: {
+            status: "complete",
+            run_label: m.run_label,
+            dates: [],
+            buckets: Array.from({length:m.n_buckets||5},(_,i)=>i+1),
+            bucket_metrics: typeof full.bucket_metrics_json==="object"?full.bucket_metrics_json:{},
+            ic_data: typeof full.ic_data_json==="object"?full.ic_data_json:[],
+            bucket_equity: typeof full.bucket_equity_json==="object"?full.bucket_equity_json:{},
+            annual_ret_by_bucket: typeof full.annual_ret_json==="object"?full.annual_ret_json:{},
+            factor_metrics: m,
+            n_obs: m.n_obs,
+            n_stocks_avg: m.n_stocks_avg,
+            config: typeof full.config_json==="object"?full.config_json:{},
+          }
+        };
+        if (!_fl_runs.find(r => r.run_id === m.strategy_id)) {
+          _fl_runs.unshift(runObj);
+          _renderRunsTable();
+        }
+        _fl_active = m.strategy_id;
+        _renderRunsTable();
+        if (typeof _showTearsheet === "function") _showTearsheet(m.strategy_id);
+        _flSetStatus("Loaded: " + m.strategy_id + " | ICIR=" + num(m.icir,3) + " | Spread=" + pct(m.quintile_spread_cagr,2));
+      };
+      body.appendChild(tr);
+    });
+  };
+
+  // Auto-load bank on init
+  const _origFactorLabInit = window.factorLabInit;
+  window.factorLabInit = function () {
+    if (_origFactorLabInit) _origFactorLabInit();
+    window.flLoadBank();
+  };
 
 })();

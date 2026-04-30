@@ -6,82 +6,83 @@
   <link rel="stylesheet" href="/static/css/app.css"/>
   <style>
     /* ═══════════════════════════════════════════════════════════
-       SHARED COMPONENT STYLES — used by all 4 tabs
+       SHARED COMPONENT STYLES — ALL use CSS variables for theming
     ═══════════════════════════════════════════════════════════ */
 
     /* ── Table rows / headers ── */
-    .fl-tbl-header { display:flex; padding:4px 8px; background:#f1f5f9; border-bottom:2px solid #e2e8f0; flex-shrink:0; user-select:none; }
-    .fl-th { font-size:9px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.5px; padding:3px 4px; cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:2px; }
-    .fl-th:hover { color:#0066cc; }
+    .fl-tbl-header { display:flex; padding:4px 8px; background:var(--bg-panel); border-bottom:2px solid var(--border); flex-shrink:0; user-select:none; }
+    .fl-th { font-size:9px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; padding:3px 4px; cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:2px; }
+    .fl-th:hover { color:var(--accent2); }
     .fl-sort-arrow { font-size:8px; }
     .fl-tbl-body { flex:1; overflow-y:auto; }
-    .fl-tr { display:flex; padding:5px 8px; border-bottom:1px solid #f1f5f9; cursor:pointer; align-items:center; border-left:3px solid transparent; transition:background .1s; }
-    .fl-tr:hover { background:#f8fafc; }
-    .fl-tr.active { border-left-color:#0066cc; background:#eff6ff; }
+    .fl-tr { display:flex; padding:5px 8px; border-bottom:1px solid var(--border); cursor:pointer; align-items:center; border-left:3px solid transparent; transition:background .1s; }
+    .fl-tr:hover { background:var(--bg-panel); }
+    .fl-tr.active { border-left-color:var(--accent2); background:var(--bg-panel2); }
     .fl-tr.promoted { border-left-color:#16a34a; }
     .fl-tr.tracked  { border-left-color:#7c3aed; }
-    .fl-td { font-size:11px; color:#374151; padding:0 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .fl-td { font-size:11px; color:var(--text); padding:0 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .fl-td.g { color:#16a34a; font-weight:600; }
     .fl-td.r { color:#dc2626; font-weight:600; }
     .fl-td.p { color:#7c3aed; font-weight:600; }
-    .fl-td.dim { color:#9ca3af; font-size:10px; }
+    .fl-td.dim { color:var(--text-dim); font-size:10px; }
+    .log-empty { padding:20px; text-align:center; color:var(--text-muted); font-size:11px; }
 
     /* ── Split pane layout ── */
     .split-view { display:flex; flex:1; overflow:hidden; min-height:0; }
     .split-left  { display:flex; flex-direction:column; overflow:hidden; min-width:200px; }
-    .split-divider { width:5px; background:#e2e8f0; cursor:col-resize; flex-shrink:0; transition:background .15s; }
-    .split-divider:hover, .split-divider.dragging { background:#0066cc; }
-    .split-right { flex:1; display:flex; flex-direction:column; overflow:hidden; background:#fff; min-width:300px; }
+    .split-divider { width:5px; background:var(--border); cursor:col-resize; flex-shrink:0; transition:background .15s; }
+    .split-divider:hover, .split-divider.dragging { background:var(--accent2); }
+    .split-right { flex:1; display:flex; flex-direction:column; overflow:hidden; background:var(--bg); min-width:300px; }
 
     /* ── Tearsheet shared ── */
-    .ts-empty { flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; }
+    .ts-empty { flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; background:var(--bg); }
     .ts-empty-icon { font-size:36px; opacity:.2; }
-    .ts-empty-msg  { font-size:12px; color:#9ca3af; }
-    .ts-content-panel { display:none; flex:1; flex-direction:column; overflow-y:auto; min-height:0; }
+    .ts-empty-msg  { font-size:12px; color:var(--text-muted); }
+    .ts-content-panel { display:none; flex:1; flex-direction:column; overflow-y:auto; min-height:0; background:var(--bg); }
     .ts-content-panel.active { display:flex; flex-direction:column; }
-    .ts-topbar { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; background:#f8f9fa; border-bottom:1px solid #e5e7eb; flex-shrink:0; }
-    .ts-name   { font-size:13px; font-weight:800; color:#0066cc; letter-spacing:1px; }
-    .ts-meta   { font-size:9px; color:#9ca3af; margin-top:2px; }
-    .ts-kpi-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:1px; background:#e5e7eb; flex-shrink:0; }
-    .ts-kpi      { background:#fff; padding:8px 6px; text-align:center; }
-    .ts-kpi-lbl  { font-size:8px; color:#6b7280; text-transform:uppercase; letter-spacing:.8px; margin-bottom:3px; }
-    .ts-kpi-val  { font-size:15px; font-weight:700; color:#111; }
+    .ts-topbar { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; background:var(--bg-panel); border-bottom:1px solid var(--border); flex-shrink:0; }
+    .ts-name   { font-size:13px; font-weight:800; color:var(--accent); letter-spacing:1px; }
+    .ts-meta   { font-size:9px; color:var(--text-muted); margin-top:2px; }
+    .ts-kpi-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:1px; background:var(--border); flex-shrink:0; }
+    .ts-kpi      { background:var(--bg-panel); padding:8px 6px; text-align:center; }
+    .ts-kpi-lbl  { font-size:8px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.8px; margin-bottom:3px; }
+    .ts-kpi-val  { font-size:15px; font-weight:700; color:var(--text); }
     .ts-kpi-val.g { color:#16a34a; }
     .ts-kpi-val.r { color:#dc2626; }
-    .ts-kpi-val.a { color:#7c3aed; }
+    .ts-kpi-val.a { color:var(--accent); }
     .ts-charts     { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 12px; flex-shrink:0; }
     .ts-charts.wide{ grid-template-columns:1fr; }
-    .ts-chart-box  { background:#fff; border:1px solid #e5e7eb; border-radius:4px; padding:8px 10px; overflow:hidden; }
-    .ts-chart-box h6 { font-size:8px; font-weight:700; color:#6b7280; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
-    .ts-mets-grid  { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:#e5e7eb; margin:0 12px 12px; }
-    .ts-met-row    { display:flex; justify-content:space-between; padding:4px 10px; background:#fff; border-bottom:1px solid #f3f4f6; }
-    .ts-met-lbl    { font-size:10px; color:#6b7280; }
-    .ts-met-val    { font-size:10px; font-weight:600; color:#111; }
+    .ts-chart-box  { background:var(--bg-panel); border:1px solid var(--border); border-radius:4px; padding:8px 10px; overflow:hidden; }
+    .ts-chart-box h6 { font-size:8px; font-weight:700; color:var(--text-dim); letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
+    .ts-mets-grid  { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--border); margin:0 12px 12px; }
+    .ts-met-row    { display:flex; justify-content:space-between; padding:4px 10px; background:var(--bg); border-bottom:1px solid var(--border); }
+    .ts-met-lbl    { font-size:10px; color:var(--text-dim); }
+    .ts-met-val    { font-size:10px; font-weight:600; color:var(--text); }
     .ts-met-val.g  { color:#16a34a; }
     .ts-met-val.r  { color:#dc2626; }
-    .ts-met-sec    { grid-column:1/-1; font-size:8px; font-weight:700; color:#0066cc; letter-spacing:1px; text-transform:uppercase; padding:6px 10px 2px; background:#eff6ff; border-top:1px solid #dbeafe; }
-    .ts-sec-hdr    { font-size:9px; font-weight:700; color:#6b7280; letter-spacing:1.2px; text-transform:uppercase; padding:8px 14px 4px; background:#f8f9fa; border-top:1px solid #e5e7eb; border-bottom:1px solid #e5e7eb; margin-top:2px; flex-shrink:0; }
+    .ts-met-sec    { grid-column:1/-1; font-size:8px; font-weight:700; color:var(--accent2); letter-spacing:1px; text-transform:uppercase; padding:6px 10px 2px; background:var(--bg-panel2); border-top:1px solid var(--border); }
+    .ts-sec-hdr    { font-size:9px; font-weight:700; color:var(--text-dim); letter-spacing:1.2px; text-transform:uppercase; padding:8px 14px 4px; background:var(--bg-panel); border-top:1px solid var(--border); border-bottom:1px solid var(--border); margin-top:2px; flex-shrink:0; }
     .ts-heatmap    { margin:0 12px 8px; overflow-x:auto; flex-shrink:0; }
 
     /* ── Config bar (shared) ── */
-    .fl-config { padding:8px 12px; background:#f8f9fa; border-bottom:1px solid #e5e7eb; flex-shrink:0; display:flex; flex-direction:column; gap:6px; }
+    .fl-config { padding:8px 12px; background:var(--bg-panel); border-bottom:1px solid var(--border); flex-shrink:0; display:flex; flex-direction:column; gap:6px; }
     .fl-config-row { display:flex; gap:6px; align-items:flex-end; flex-wrap:wrap; }
-    .fl-config select, .fl-config input { background:#fff; border:1px solid #d1d5db; color:#374151; font-family:var(--font); font-size:11px; padding:4px 7px; border-radius:3px; outline:none; }
-    .fl-config select:focus, .fl-config input:focus { border-color:#0066cc; }
-    .fl-config label { font-size:9px; color:#6b7280; letter-spacing:1px; text-transform:uppercase; display:block; margin-bottom:2px; }
+    .fl-config select, .fl-config input { background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:var(--font); font-size:11px; padding:4px 7px; border-radius:3px; outline:none; }
+    .fl-config select:focus, .fl-config input:focus { border-color:var(--accent2); }
+    .fl-config label { font-size:9px; color:var(--text-dim); letter-spacing:1px; text-transform:uppercase; display:block; margin-bottom:2px; }
     .fl-config .fld { display:flex; flex-direction:column; }
-    .fl-prog      { height:3px; background:#f1f5f9; flex-shrink:0; overflow:hidden; }
-    .fl-prog-fill { height:100%; background:#0066cc; transition:width .3s; width:0; }
-    .status-bar   { padding:5px 12px; font-size:10px; color:#6b7280; border-bottom:1px solid #f1f5f9; background:#f8f9fa; flex-shrink:0; }
+    .fl-prog      { height:3px; background:var(--bg-panel); flex-shrink:0; overflow:hidden; }
+    .fl-prog-fill { height:100%; background:var(--accent2); transition:width .3s; width:0; }
+    .status-bar   { padding:5px 12px; font-size:10px; color:var(--text-dim); border-bottom:1px solid var(--border); background:var(--bg-panel); flex-shrink:0; }
 
     /* ── Buttons ── */
-    .btn-run-fl  { background:#0066cc; color:#fff; border:none; padding:6px 16px; font-size:11px; font-weight:700; cursor:pointer; border-radius:3px; white-space:nowrap; }
+    .btn-run-fl  { background:var(--accent2); color:#fff; border:none; padding:6px 16px; font-size:11px; font-weight:700; cursor:pointer; border-radius:3px; white-space:nowrap; }
     .btn-run-fl:hover   { opacity:.88; }
     .btn-run-fl:disabled{ opacity:.4; cursor:not-allowed; }
     .btn-promote { background:#16a34a; color:#fff; border:none; padding:4px 10px; font-size:9px; font-weight:700; cursor:pointer; border-radius:3px; }
     .btn-activate{ background:#7c3aed; color:#fff; border:none; padding:4px 10px; font-size:9px; font-weight:700; cursor:pointer; border-radius:3px; }
-    .btn-sm-action { background:#f8f9fa; color:#374151; border:1px solid #d1d5db; padding:4px 10px; font-size:9px; cursor:pointer; border-radius:3px; }
-    .btn-pdf     { background:#0066cc; color:#fff; border:none; padding:5px 12px; font-size:9px; font-weight:700; cursor:pointer; border-radius:3px; }
+    .btn-sm-action { background:var(--bg-panel2); color:var(--text); border:1px solid var(--border); padding:4px 10px; font-size:9px; cursor:pointer; border-radius:3px; }
+    .btn-pdf     { background:var(--accent2); color:#fff; border:none; padding:5px 12px; font-size:9px; font-weight:700; cursor:pointer; border-radius:3px; }
     .btn-csv     { background:#16a34a; color:#fff; border:none; padding:5px 12px; font-size:9px; font-weight:700; cursor:pointer; border-radius:3px; }
     .btn-img     { background:#7c3aed; color:#fff; border:none; padding:5px 12px; font-size:9px; font-weight:700; cursor:pointer; border-radius:3px; }
 
@@ -97,6 +98,7 @@
     .main-tab.tab-portfolio .tab-dot { background:#0066cc; }
     .main-tab.tab-results   .tab-dot { background:#16a34a; }
     .main-tab.tab-tracker   .tab-dot { background:#f59e0b; }
+    .main-tab.tab-findings  .tab-dot { background:#06b6d4; }
     .tab-dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:6px; vertical-align:middle; }
     .nav-right { margin-left:auto; display:flex; align-items:center; gap:8px; padding:0 12px; }
     .nav-util  { background:none; border:1px solid #1e3a5f; color:#64748b; padding:3px 10px; border-radius:3px; cursor:pointer; font-size:9px; font-family:var(--font); }
@@ -122,7 +124,7 @@
     #nav::-webkit-scrollbar { display:none; }
   </style>
 </head>
-<body data-theme="dark">
+<body data-theme="">
 
 <!-- ══════════════════════════════════════════════════════════════
      NAV BAR
@@ -141,6 +143,9 @@
   </button>
   <button class="main-tab tab-tracker"   onclick="switchMainTab('tracker')"   id="tab-btn-tracker">
     <span class="tab-dot" style="background:#f59e0b"></span>TRACKER
+  </button>
+  <button class="main-tab tab-findings"  onclick="switchMainTab('findings')"  id="tab-btn-findings">
+    <span class="tab-dot" style="background:#06b6d4"></span>FINDINGS
   </button>
 
   <div class="nav-right">
@@ -202,7 +207,7 @@
       <div class="fld"><label>COST bps</label><input type="number" id="fl-cost-bps" value="15" min="0" style="width:50px"/></div>
       <button class="btn-run-fl" id="fl-run-btn" onclick="flRunBacktest()" style="background:#7c3aed">&#9654; RUN FACTOR</button>
     </div>
-    <div id="fl-score-info" style="font-size:9px;color:#9ca3af;padding-top:2px">Select a score to see date range</div>
+    <div id="fl-score-info" style="font-size:9px;color:var(--text-muted);padding-top:2px">Select a score to see date range</div>
   </div>
   <div class="fl-prog"><div class="fl-prog-fill" id="fl-prog-fill"></div></div>
   <div class="status-bar" id="fl-status-bar">Select a factor and click RUN FACTOR</div>
@@ -220,25 +225,73 @@
         <div class="fl-th" style="flex:0 0 48px" onclick="flSortBy('q1_sharpe')">Q1 SH</div>
         <div class="fl-th" style="flex:1">LABEL</div>
       </div>
-      <div class="fl-tbl-body" id="fl-tbl-body">
-        <div class="log-empty" id="fl-tbl-empty" style="padding:20px;text-align:center;color:#9ca3af;font-size:11px">No factor runs yet — configure and click RUN FACTOR</div>
+      <div class="fl-tbl-body" id="fl-tbl-body" style="max-height:40%;min-height:80px">
+        <div class="log-empty" id="fl-tbl-empty">No factor runs yet — configure and click RUN FACTOR</div>
+      </div>
+
+      <!-- Saved bank models (bottom of left pane) -->
+      <div style="padding:5px 10px;background:var(--bg-panel2);border-top:2px solid var(--border);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+        <span style="font-size:8px;font-weight:700;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">SAVED MODELS</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span id="fl-bank-count" style="font-size:8px;color:var(--text-muted)">0 saved</span>
+          <button onclick="flLoadBank()" style="font-size:8px;padding:2px 7px;background:var(--bg);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;border-radius:3px">&#8635;</button>
+        </div>
+      </div>
+      <div class="fl-tbl-header" style="background:var(--bg-panel2)">
+        <div class="fl-th" style="flex:0 0 115px;font-size:8px">STRATEGY ID</div>
+        <div class="fl-th" style="flex:0 0 60px;font-size:8px">SPREAD</div>
+        <div class="fl-th" style="flex:0 0 44px;font-size:8px">ICIR</div>
+        <div class="fl-th" style="flex:0 0 44px;font-size:8px">HIT%</div>
+        <div class="fl-th" style="flex:0 0 50px;font-size:8px">Q1 CAGR</div>
+        <div class="fl-th" style="flex:1;font-size:8px">LABEL</div>
+      </div>
+      <div class="fl-tbl-body" id="fl-bank-body" style="flex:1">
+        <div class="log-empty" id="fl-bank-empty">Loading saved models...</div>
       </div>
     </div>
     <div class="split-divider" id="fl-divider"></div>
     <div class="split-right">
       <div class="ts-empty" id="fl-ts-empty">
         <div class="ts-empty-icon">&#9652;</div>
-        <div class="ts-empty-msg">Run a factor backtest to see the quintile tearsheet</div>
+        <div class="ts-empty-msg">Run a factor backtest or click a saved model</div>
       </div>
       <div class="ts-content-panel" id="fl-ts-content"></div>
     </div>
   </div>
 </div><!-- /#view-factor -->
 
-<!-- ─── TAB 2: PORTFOLIO MODELS ──────────────────────────────── -->
+<!-- ─── TAB 2: PORTFOLIO MODELS (coming soon — stub) ────────────── -->
 <div class="tab-view" id="view-portfolio">
+  <div class="fl-config">
+    <div class="fl-config-row">
+      <span style="font-size:13px;font-weight:700;color:var(--text)">Portfolio Models</span>
+      <span style="font-size:10px;color:var(--text-muted);margin-left:8px">— Run a factor model first, then promote it here to build a live Top-N portfolio strategy</span>
+    </div>
+  </div>
+  <div class="split-view" style="align-items:center;justify-content:center">
+    <div style="text-align:center;padding:60px 40px;color:var(--text-muted)">
+      <div style="font-size:48px;opacity:.15;margin-bottom:20px">&#9783;</div>
+      <div style="font-size:14px;font-weight:700;color:var(--text-dim);margin-bottom:8px">Portfolio Models — Coming Next Sprint</div>
+      <div style="font-size:11px;max-width:380px;line-height:1.7">
+        After running a factor model in <strong>Factor Models</strong>, you'll be able to promote the top quintile into a live Top-N portfolio backtest here with full position sizing, rebalance timing optimization, and technical entry filters.
+      </div>
+      <div style="margin-top:24px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;padding:12px 20px;font-size:10px;color:var(--text-dim)">&#9654; Top-N from Q1</div>
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;padding:12px 20px;font-size:10px;color:var(--text-dim)">&#9654; Rebalance Optimizer</div>
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;padding:12px 20px;font-size:10px;color:var(--text-dim)">&#9654; Technical Filters</div>
+        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;padding:12px 20px;font-size:10px;color:var(--text-dim)">&#9654; Full Tearsheet</div>
+      </div>
+      <button class="btn-run-fl" onclick="window.switchMainTab('factor')" style="margin-top:28px;background:#7c3aed">
+        &#9664; Go to Factor Models
+      </button>
+    </div>
+  </div>
+</div><!-- /#view-portfolio -->
 
-  <!-- Config bar (wraps existing app.js controls) -->
+<!-- ─── TAB 3: RESULTS (strategy backtests from app.js) ──────── -->
+<div class="tab-view" id="view-results">
+
+  <!-- app.js controls live here -->
   <div class="fl-config" id="config-bar">
     <div class="fl-config-row">
       <div class="fld"><label>MODE</label>
@@ -292,7 +345,7 @@
         <div class="fl-th" style="flex:1">STATUS</div>
       </div>
       <div class="fl-tbl-body" id="tbl-body">
-        <div class="log-empty" id="tbl-empty" style="padding:20px;text-align:center;color:#9ca3af;font-size:11px">No runs yet — click RUN to start a backtest</div>
+        <div class="log-empty" id="tbl-empty">No runs yet — click RUN to start a backtest</div>
       </div>
     </div>
     <div class="split-divider" id="divider"></div>
@@ -302,66 +355,6 @@
         <div class="ts-empty-msg">Click a run in the table to view tearsheet</div>
       </div>
       <div class="ts-content-panel" id="ts-content"></div>
-    </div>
-  </div>
-</div><!-- /#view-portfolio -->
-
-<!-- ─── TAB 3: RESULTS ───────────────────────────────────────── -->
-<div class="tab-view" id="view-results">
-
-  <div class="fl-config">
-    <div class="fl-config-row" style="justify-content:space-between;width:100%">
-      <div style="display:flex;gap:8px;align-items:center">
-        <span style="font-size:12px;font-weight:700;color:#374151">Saved Models</span>
-        <span id="res-count-badge" style="background:#eff6ff;color:#0066cc;border:1px solid #bfdbfe;border-radius:10px;padding:2px 8px;font-size:9px;font-weight:700">0 models</span>
-        <button class="btn-sm-action" onclick="resRefresh()">&#8635; Refresh</button>
-      </div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <label style="font-size:9px;color:#6b7280">TYPE</label>
-        <select id="res-filter-type" onchange="resRefresh()" style="font-size:10px;padding:3px 6px;border:1px solid #d1d5db;border-radius:3px">
-          <option value="all">All Models</option>
-          <option value="factor">Factor Models (FM-)</option>
-          <option value="portfolio">Portfolio Models (PS-)</option>
-        </select>
-        <label style="font-size:9px;color:#6b7280">SORT</label>
-        <select id="res-sort-col" onchange="resRefresh()" style="font-size:10px;padding:3px 6px;border:1px solid #d1d5db;border-radius:3px">
-          <option value="icir">ICIR</option>
-          <option value="quintile_spread_cagr">Q Spread</option>
-          <option value="q1_cagr">Q1 CAGR</option>
-          <option value="created_at">Date</option>
-        </select>
-      </div>
-    </div>
-  </div>
-  <div class="status-bar" id="res-status">Loading results from strategy bank...</div>
-
-  <div class="split-view">
-    <div class="split-left" id="res-left-pane" style="width:560px;flex-shrink:0">
-      <div class="fl-tbl-header">
-        <div class="fl-th" style="flex:0 0 120px">STRATEGY ID</div>
-        <div class="fl-th" style="flex:0 0 48px">TYPE</div>
-        <div class="fl-th" style="flex:0 0 60px">SPREAD</div>
-        <div class="fl-th" style="flex:0 0 48px">IC</div>
-        <div class="fl-th" style="flex:0 0 44px">ICIR</div>
-        <div class="fl-th" style="flex:0 0 50px">Q1 CAGR</div>
-        <div class="fl-th" style="flex:0 0 48px">Q1 SH</div>
-        <div class="fl-th" style="flex:0 0 60px">SAVED</div>
-        <div class="fl-th" style="flex:1">LABEL</div>
-      </div>
-      <div class="fl-tbl-body" id="res-tbl-body">
-        <div class="log-empty" id="res-tbl-empty" style="padding:20px;text-align:center;color:#9ca3af;font-size:11px">Loading...</div>
-      </div>
-    </div>
-    <div class="split-divider" id="res-divider"></div>
-    <div class="split-right">
-      <div class="ts-empty" id="res-ts-empty">
-        <div class="ts-empty-icon">&#9670;</div>
-        <div class="ts-empty-msg">Select a saved model to view its tearsheet</div>
-        <div style="margin-top:16px;display:flex;gap:8px">
-          <button class="btn-activate" onclick="resActivateSelected()" id="res-activate-btn" style="display:none">ACTIVATE IN TRACKER</button>
-        </div>
-      </div>
-      <div class="ts-content-panel" id="res-ts-content"></div>
     </div>
   </div>
 </div><!-- /#view-results -->
@@ -402,7 +395,7 @@
         <div class="fl-th" style="flex:1">SECTOR</div>
       </div>
       <div class="fl-tbl-body" id="trk-pos-body">
-        <div class="log-empty" id="trk-pos-empty" style="padding:20px;text-align:center;color:#9ca3af;font-size:11px">
+        <div class="log-empty" id="trk-pos-empty" class="log-empty">
           No active positions<br/>Activate a strategy from Results tab
         </div>
       </div>
@@ -420,7 +413,7 @@
         <div class="fl-th" style="flex:1">SECTOR</div>
       </div>
       <div class="fl-tbl-body" id="trk-rebal-body" style="max-height:200px">
-        <div class="log-empty" id="trk-rebal-empty" style="padding:12px;text-align:center;color:#9ca3af;font-size:11px">No rebalance due</div>
+        <div class="log-empty" id="trk-rebal-empty" class="log-empty">No rebalance due</div>
       </div>
     </div>
 
@@ -440,6 +433,87 @@
   </div>
 </div><!-- /#view-tracker -->
 
+<!-- ─── TAB 5: FINDINGS ──────────────────────────────────────── -->
+<div class="tab-view" id="view-findings">
+
+  <div class="fl-config">
+    <div class="fl-config-row" style="justify-content:space-between;width:100%">
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:12px;font-weight:700;color:var(--text)">Research Findings Journal</span>
+        <span id="fnd-count-badge" style="background:rgba(6,182,212,0.15);color:#06b6d4;border:1px solid rgba(6,182,212,0.3);border-radius:10px;padding:2px 8px;font-size:9px;font-weight:700">0 findings</span>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <select id="fnd-filter-tag" onchange="findingsFilter()" style="font-size:10px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:3px">
+          <option value="all">All Tags</option>
+          <option value="factor">Factor Research</option>
+          <option value="portfolio">Portfolio Research</option>
+          <option value="risk">Risk Insight</option>
+          <option value="data">Data Quality</option>
+          <option value="bias">Bias / Gotcha</option>
+        </select>
+        <button class="btn-run-fl" onclick="findingsNew()" style="background:#06b6d4;padding:5px 12px;font-size:10px">+ NEW FINDING</button>
+        <button class="btn-sm-action" onclick="findingsExport()">&#8595; Export</button>
+      </div>
+    </div>
+  </div>
+  <div class="status-bar" id="fnd-status">Research journal — log what you learn from each backtest cycle</div>
+
+  <div style="display:flex;flex:1;overflow:hidden;min-height:0;flex-direction:column">
+
+    <!-- New finding form (hidden by default) -->
+    <div id="fnd-new-form" style="display:none;padding:12px 16px;background:var(--bg-panel);border-bottom:2px solid #06b6d4;flex-shrink:0">
+      <div style="font-size:10px;font-weight:700;color:#06b6d4;margin-bottom:8px;letter-spacing:1px">NEW RESEARCH FINDING</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 140px;gap:8px;margin-bottom:8px">
+        <div>
+          <div style="font-size:9px;color:var(--text-dim);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Title / Summary</div>
+          <input id="fnd-title" placeholder="e.g. JCN factor decays after 9mo hold" style="width:100%;padding:6px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:11px;border-radius:3px"/>
+        </div>
+        <div>
+          <div style="font-size:9px;color:var(--text-dim);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Strategy ID (optional)</div>
+          <input id="fnd-strategy-id" placeholder="e.g. FM-JCNFUL-20260430-C9BF" style="width:100%;padding:6px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:11px;border-radius:3px"/>
+        </div>
+        <div>
+          <div style="font-size:9px;color:var(--text-dim);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Tag</div>
+          <select id="fnd-tag" style="width:100%;padding:6px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:11px;border-radius:3px">
+            <option value="factor">Factor Research</option>
+            <option value="portfolio">Portfolio Research</option>
+            <option value="risk">Risk Insight</option>
+            <option value="data">Data Quality</option>
+            <option value="bias">Bias / Gotcha</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-bottom:8px">
+        <div style="font-size:9px;color:var(--text-dim);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Detailed Finding / What We Learned</div>
+        <textarea id="fnd-body" rows="4" placeholder="Describe what you found, what worked, what didn't, and what to try next..." style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:11px;border-radius:3px;resize:vertical;font-family:inherit"></textarea>
+      </div>
+      <div style="margin-bottom:8px">
+        <div style="font-size:9px;color:var(--text-dim);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Action Items / Next Steps</div>
+        <input id="fnd-actions" placeholder="e.g. Test with 3mo hold; try momentum overlay; test on mid-cap only" style="width:100%;padding:6px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:11px;border-radius:3px"/>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-run-fl" onclick="findingsSave()" style="background:#06b6d4">Save Finding</button>
+        <button class="btn-sm-action" onclick="document.getElementById('fnd-new-form').style.display='none'">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Findings table with expandable rows -->
+    <div style="flex:1;overflow-y:auto">
+      <div class="fl-tbl-header">
+        <div class="fl-th" style="flex:0 0 30px"></div>
+        <div class="fl-th" style="flex:0 0 85px">DATE</div>
+        <div class="fl-th" style="flex:0 0 65px">TAG</div>
+        <div class="fl-th" style="flex:0 0 150px">STRATEGY ID</div>
+        <div class="fl-th" style="flex:1">FINDING / SUMMARY</div>
+        <div class="fl-th" style="flex:0 0 60px">ACTIONS</div>
+      </div>
+      <div id="fnd-table-body">
+        <div class="log-empty" id="fnd-empty">No findings yet — click <strong>+ NEW FINDING</strong> to log your first research insight</div>
+      </div>
+    </div>
+  </div>
+</div><!-- /#view-findings -->
+
 </div><!-- /#app-body -->
 
 <!-- ══════════════════════════════════════════════════════════════
@@ -452,6 +526,7 @@
 <script src="/static/js/factor_lab.js"></script>
 <script src="/static/js/results_lab.js"></script>
 <script src="/static/js/tracker_lab.js"></script>
+<script src="/static/js/findings_lab.js"></script>
 <script src="/static/js/tabs.js"></script>
 </body>
 </html>

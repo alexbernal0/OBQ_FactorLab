@@ -741,5 +741,56 @@ def factor_bank_notes(strategy_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/findings", methods=["GET","POST"])
+def findings_api():
+    import datetime as _dt
+    import pathlib as _pl
+    import json as _j
+    bank_dir = _pl.Path(os.environ.get("OBQ_BANK_DIR", r"D:\OBQ_AI\OBQ_FactorLab_Bank"))
+    bank_dir.mkdir(parents=True, exist_ok=True)
+    findings_file = bank_dir / "findings.json"
+
+    if request.method == "GET":
+        try:
+            data = _j.loads(findings_file.read_text(encoding="utf-8")) if findings_file.exists() else []
+            return jsonify({"findings": data})
+        except Exception as e:
+            return jsonify({"findings": [], "error": str(e)})
+
+    # POST — save new finding
+    try:
+        data = request.get_json(force=True) or {}
+        existing = _j.loads(findings_file.read_text(encoding="utf-8")) if findings_file.exists() else []
+        finding = {
+            "id":          len(existing) + 1,
+            "title":       data.get("title", ""),
+            "body":        data.get("body", ""),
+            "strategy_id": data.get("strategy_id"),
+            "tag":         data.get("tag", "factor"),
+            "actions":     data.get("actions", ""),
+            "created_at":  data.get("created_at", _dt.datetime.now().isoformat()),
+        }
+        existing.insert(0, finding)
+        findings_file.write_text(_j.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True, "id": finding["id"]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/findings/<int:finding_id>", methods=["DELETE"])
+def delete_finding(finding_id):
+    import pathlib as _pl
+    import json as _j
+    bank_dir = _pl.Path(os.environ.get("OBQ_BANK_DIR", r"D:\OBQ_AI\OBQ_FactorLab_Bank"))
+    findings_file = bank_dir / "findings.json"
+    try:
+        data = _j.loads(findings_file.read_text(encoding="utf-8")) if findings_file.exists() else []
+        data = [f for f in data if f.get("id") != finding_id]
+        findings_file.write_text(_j.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5744, debug=False, use_reloader=False, threaded=True)

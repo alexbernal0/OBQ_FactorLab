@@ -1,13 +1,6 @@
 // OBQ Factor Lab — app.js  (Options Scanner skin)
 
-// ── Theme ───────────────────────────────────────────────────────────────
-localStorage.removeItem("fl-theme");  // always start light
-let _theme = "";
-document.body.setAttribute("data-theme", "");
-function toggleTheme() {
-  _theme = (_theme === "") ? "dark" : (_theme === "dark" ? "night" : "");
-  document.body.setAttribute("data-theme", _theme);
-}
+// ── Theme managed by tabs.js — app.js does NOT touch data-theme ─────────
 
 // ── Screenshot (dev tool — no save, display only) ─────────────────────
 function snapScreen() {

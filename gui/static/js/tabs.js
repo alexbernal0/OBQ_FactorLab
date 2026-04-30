@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var TABS = ["factor", "portfolio", "results", "tracker"];
+  var TABS = ["factor", "portfolio", "results", "tracker", "findings"];
 
   function switchMainTab(tab) {
     TABS.forEach(function (t) {
@@ -14,15 +14,16 @@
       if (btn)  btn.classList.toggle("active",  t === tab);
     });
 
-    // Per-tab init callbacks
-    if (tab === "factor"    && typeof factorLabInit === "function") factorLabInit();
-    if (tab === "results"   && typeof resInit       === "function") resInit();
-    if (tab === "tracker"   && typeof trkInit       === "function") trkInit();
-    if (tab === "portfolio") {
-      if (typeof _spyLoaded !== "undefined" && !_spyLoaded && typeof startSPY === "function") {
-        setTimeout(startSPY, 300);
-      }
+  // Per-tab init callbacks
+  if (tab === "factor"    && typeof factorLabInit    === "function") factorLabInit();
+  if (tab === "tracker"   && typeof trkInit          === "function") trkInit();
+  if (tab === "findings"  && typeof findingsInit     === "function") findingsInit();
+  // RESULTS tab hosts the strategy backtest (app.js) — auto-load SPY on first visit
+  if (tab === "results") {
+    if (typeof _spyLoaded !== "undefined" && !_spyLoaded && typeof startSPY === "function") {
+      setTimeout(startSPY, 300);
     }
+  }
 
     // Resize Plotly after layout settles
     setTimeout(function () {
@@ -37,8 +38,8 @@
   window.switchMainTab  = switchMainTab;
   window.switchToFactor = function () { switchMainTab("factor"); };
 
-  // Override app.js switchTab (it calls switchTab('topn') etc → route to portfolio)
-  window.switchTab = function () { switchMainTab("portfolio"); };
+  // Override app.js switchTab (it calls switchTab('topn') etc → route to results)
+  window.switchTab = function () { switchMainTab("results"); };
 
   // ── Resizable dividers ─────────────────────────────────────────
   function makeDivider(divId, leftId, minLeft, minRight, plotSel) {
@@ -71,13 +72,19 @@
   }
 
   // ── Theme ──────────────────────────────────────────────────────
-  var _theme = "dark";
-  document.body.setAttribute("data-theme", "dark");
+  var _theme = "";  // default = light (:root vars, white bg)
+
+  function _applyTheme(t) {
+    document.body.setAttribute("data-theme", t);
+    document.documentElement.setAttribute("data-theme", t);
+  }
+
+  _applyTheme("");  // start light
   localStorage.removeItem("fl-theme");
 
   window.toggleTheme = function () {
-    _theme = _theme === "dark" ? "" : _theme === "" ? "night" : "dark";
-    document.body.setAttribute("data-theme", _theme);
+    _theme = _theme === "" ? "dark" : _theme === "dark" ? "night" : "";
+    _applyTheme(_theme);
   };
 
   // ── Snap ───────────────────────────────────────────────────────

@@ -12,7 +12,7 @@
     --font: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
     --firing-bg: #f0fdf4;
 }
-[data-theme="dark"] {
+html[data-theme="dark"], [data-theme="dark"] {
     --bg: #0a0e27; --bg-panel: #1a1a2e; --bg-panel2: #0d1117;
     --text: #e2e8f0; --text-dim: #94a3b8; --text-muted: #64748b;
     --border: #2a2a4a; --border-strong: #3d3d5c;
@@ -20,7 +20,7 @@
     --candle-up: #00c5a8; --candle-down: #ff4d4d;
     --firing-bg: #0d3320;
 }
-[data-theme="night"] {
+html[data-theme="night"], [data-theme="night"] {
     --bg: #111827; --bg-panel: #1f2937; --bg-panel2: #111827;
     --text: #f9fafb; --text-dim: #9ca3af; --text-muted: #6b7280;
     --border: #374151; --border-strong: #4b5563;

@@ -3,8 +3,11 @@
 
 const FT_COLORS = {
   q: ["#1d4ed8","#16a34a","#ca8a04","#ea580c","#dc2626"],  // Q1..Q5
-  bg: "#ffffff", plot_bg: "#fafafa",
-  grid: "#eeeeee", tick: "#374151", legend: "#374151",
+  get bg()      { return getComputedStyle(document.body).getPropertyValue("--bg").trim()||"#0a0e27"; },
+  get plot_bg() { return getComputedStyle(document.body).getPropertyValue("--bg-panel").trim()||"#1a1a2e"; },
+  get grid()    { return getComputedStyle(document.body).getPropertyValue("--border").trim()||"#2a2a4a"; },
+  get tick()    { return getComputedStyle(document.body).getPropertyValue("--text-dim").trim()||"#94a3b8"; },
+  get legend()  { return getComputedStyle(document.body).getPropertyValue("--text").trim()||"#e2e8f0"; },
   ic_pos: "rgba(22,163,74,0.7)", ic_neg: "rgba(220,38,38,0.7)",
 };
 const FT_CFG = { displayModeBar: false, responsive: true };
@@ -378,35 +381,281 @@ function ftBuildTortorielloTable(buckets, bucketMetrics, tortoriello, universeMe
   return wrap;
 }
 
-// ── Rolling 3-Year Excess Return Chart ───────────────────────────────────────
-function ftDrawRolling3Y(divId, tortoriello, buckets) {
-  const traces = [];
-  [0, buckets.length-1].forEach(bi => {
-    const b = buckets[bi];
-    const t = (tortoriello||{})[String(b)] || {};
-    const x = t.roll_3y_dates || [];
-    const y = (t.roll_3y_excess||[]).map(v=>+(v*100).toFixed(2));
-    if(!x.length) return;
-    traces.push({
-      x, y, type:"scatter", mode:"lines",
-      name:"Q"+b+" excess",
-      line:{color:FT_COLORS.q[bi]||"#888",width:2},
-      fill:"tozeroy",
-      fillcolor:bi===0?"rgba(22,163,74,0.10)":"rgba(220,38,38,0.10)",
+// ═══════════════════════════════════════════════════════════════════
+// TORTORIELLO-STYLE TABLES & CHARTS
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Figure 2.3: Main Quintile Summary Table ─────────────────────────────────
+// Rows = metrics, Cols = Q1..Qn + Universe + S&P500(benchmark)
+function ftBuildMainTable(result) {
+  const buckets = result.buckets || [1,2,3,4,5];
+  const n = buckets.length;
+  const bm = result.bucket_metrics || {};
+  const tort = result.tortoriello || {};
+  const um = result.universe_metrics || {};
+  const fm = result.factor_metrics || {};
+
+  function pct(v,d=1,sign=false) {
+    if(v==null||isNaN(+v)) return "—";
+    const s = (v*100).toFixed(d);
+    return (sign&&v>=0?"+":"")+s+"%";
+  }
+  function num(v,d=2) { if(v==null||isNaN(+v)) return "—"; return Number(v).toFixed(d); }
+  function dollar(v)  { if(v==null||isNaN(+v)) return "—"; return "$"+Math.round(v).toLocaleString(); }
+
+  const S = 'style="padding:4px 9px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap"';
+  const SL = 'style="padding:4px 9px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;font-weight:600;color:var(--text)"';
+  const SH = 'style="padding:5px 9px;text-align:right;background:var(--bg-panel2);color:var(--text-dim);font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;border-bottom:2px solid var(--border)"';
+
+  // Color helper for a value: green if good, red if bad
+  function vc(v, isGoodPositive=true) {
+    if(v==null||isNaN(+v)) return "color:var(--text-dim)";
+    return isGoodPositive ? (v>0?"color:#4ade80":"color:#f87171") : (v<0?"color:#4ade80":"color:#f87171");
+  }
+
+  // Column data accessors: returns value for each column
+  const getCols = (getterFn) => {
+    const vals = buckets.map(b => getterFn(String(b)));
+    const univVal = getterFn("univ");
+    return [...vals, univVal];
+  };
+
+  // Row definitions: [label, getter, formatter, colorFn]
+  const rows = [
+    ["CAGR — Period Rebalance",
+      b => b==="univ"?(um.cagr):((bm[b]||{}).cagr),
+      v => pct(v,1,true), v => vc(v)],
+
+    ["Avg Excess Return vs. Universe",
+      b => b==="univ"?null:((tort[b]||{}).avg_excess_vs_univ),
+      v => pct(v,1,true), v => vc(v)],
+
+    ["Value of $10,000 Invested",
+      b => b==="univ"?(result.universe_terminal):((tort[b]||{}).terminal_wealth),
+      v => dollar(v), () => "color:var(--text)"],
+
+    ["% of 1-Period Strategy Outperforms Universe",
+      b => b==="univ"?null:((tort[b]||{}).pct_1y_beats_univ),
+      v => pct(v,1), v => v!=null?(v>=0.6?"color:#4ade80":v>=0.5?"color:var(--text)":"color:#f87171"):"color:var(--text-dim)"],
+
+    ["% Rolling 3-Year Periods Strategy Outperforms",
+      b => b==="univ"?null:((tort[b]||{}).pct_3y_beats_univ),
+      v => pct(v,1), v => v!=null?(v>=0.7?"color:#4ade80":v>=0.6?"color:var(--text)":"color:#f87171"):"color:var(--text-dim)"],
+
+    ["Maximum Gain",
+      b => b==="univ"?(um.best_month):((tort[b]||{}).max_gain),
+      v => pct(v,1,true), () => "color:#4ade80"],
+
+    ["Maximum Loss",
+      b => b==="univ"?(um.worst_month):((tort[b]||{}).max_loss),
+      v => pct(v,1), () => "color:#f87171"],
+
+    ["Sharpe Ratio",
+      b => b==="univ"?(um.sharpe):((bm[b]||{}).sharpe),
+      v => num(v,2), v => v!=null?(v>=1?"color:#4ade80":v>=0.5?"color:var(--text)":"color:#f87171"):"color:var(--text-dim)"],
+
+    ["Standard Deviation of Returns (Ann.)",
+      b => b==="univ"?(um.ann_vol):((tort[b]||{}).std_dev_ann),
+      v => pct(v,2), () => "color:var(--text)"],
+
+    ["Beta (vs. Universe)",
+      b => b==="univ"?1.0:((tort[b]||{}).beta_vs_univ),
+      v => num(v,2), () => "color:var(--text)"],
+
+    ["Alpha (vs. Universe, Ann.)",
+      b => b==="univ"?0:((tort[b]||{}).alpha_vs_univ),
+      v => pct(v,2,true), v => vc(v)],
+
+    ["Average Portfolio Size",
+      b => b==="univ"?null:((tort[b]||{}).avg_portfolio_size),
+      v => v!=null?Math.round(v):"—", () => "color:var(--text)"],
+
+    ["Avg Companies Outperforming",
+      b => b==="univ"?null:((tort[b]||{}).avg_beat_universe),
+      v => v!=null?Math.round(v):"—", () => "color:#4ade80"],
+
+    ["Avg Companies Underperforming",
+      b => b==="univ"?null:((tort[b]||{}).avg_lag_universe),
+      v => v!=null?Math.round(v):"—", () => "color:#f87171"],
+
+    ["Median Factor Score (Bucket)",
+      b => b==="univ"?null:((tort[b]||{}).median_factor_score),
+      v => num(v,1), () => "color:#a78bfa"],
+
+    ["Average Market Cap ($M)",
+      b => b==="univ"?null:((tort[b]||{}).avg_market_cap),
+      v => v!=null?("$"+Math.round(v/1e6).toLocaleString()+"M"):"—", () => "color:var(--text)"],
+  ];
+
+  const colHeaders = [...buckets.map(b=>"<b>"+b+(b===1?"st":b===2?"nd":b===3?"rd":"th")+" Quintile</b>"), "<b>Universe</b>"];
+  const colColors  = [...buckets.map((_,i)=>FT_COLORS.q[i]||"#aaa"), "#94a3b8"];
+
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:9.5px;font-family:'Segoe UI',sans-serif">
+    <thead><tr>
+      <th ${SH} style="text-align:left;min-width:220px">${result.dates?.[0]?.slice(0,4)||""} — ${result.dates?.[result.dates.length-1]?.slice(0,4)||""}</th>
+      ${colHeaders.map((h,i)=>`<th ${SH} style="color:${colColors[i]};min-width:80px">${h}</th>`).join("")}
+    </tr></thead><tbody>`;
+
+  rows.forEach(([label, getter, fmt, colorFn], ri) => {
+    const bg = ri%2===0?"background:var(--bg)":"background:var(--bg-panel)";
+    html += `<tr style="${bg}"><td ${SL}>${label}</td>`;
+    const allCols = [...buckets.map(b=>getter(String(b))), getter("univ")];
+    allCols.forEach((v,ci) => {
+      const formatted = v!=null ? fmt(v) : "—";
+      const color = v!=null ? colorFn(v) : "color:var(--text-dim)";
+      html += `<td ${S} style="${S.slice(7,-1)};${color}">${formatted}</td>`;
     });
+    html += "</tr>";
   });
-  traces.push({
-    x:traces[0]?.x||[], y:(traces[0]?.x||[]).map(()=>0),
-    type:"scatter", mode:"lines",
-    line:{color:"#9ca3af",width:1,dash:"dot"}, showlegend:false,
-  });
-  Plotly.newPlot(divId, traces, _ftLayout({
-    margin:{l:52,r:8,t:8,b:36},
-    yaxis:{...{gridcolor:FT_COLORS.grid,linecolor:"#cccccc",tickfont:{size:8},autorange:true,
-               zeroline:true,zerolinecolor:"#374151",zerolinewidth:1},
-           ticksuffix:"%",title:{text:"Excess vs Universe",font:{size:8}}},
-  }), FT_CFG);
+
+  html += "</tbody></table>";
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "overflow-x:auto;flex-shrink:0;border:1px solid var(--border);border-radius:4px;margin:0 12px 12px";
+  wrap.innerHTML = html;
+  return wrap;
 }
+
+// ── Figure 2.4: Sector Summary Tables (Top + Bottom Quintile) ────────────────
+function ftBuildSectorTables(result) {
+  const n = (result.buckets||[1,2,3,4,5]).length;
+  const tort = result.tortoriello || {};
+  const sa = result.sector_attribution || [];
+  if (!sa.length) return document.createElement("div");
+
+  const sectors = sa.map(s=>s.sector).filter(Boolean);
+
+  function pct(v,d=1,sign=false) {
+    if(v==null||isNaN(+v)) return "—";
+    const s=(v*100).toFixed(d); return (sign&&v>=0?"+":"")+s+"%";
+  }
+  function vc(v) { if(v==null) return "color:var(--text-dim)"; return v>0?"color:#4ade80":"color:#f87171"; }
+
+  const S = 'style="padding:3px 8px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap;font-size:9px"';
+  const SL = 'style="padding:3px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;font-size:9px;font-weight:600;color:var(--text)"';
+  const SH = 'style="padding:4px 8px;text-align:right;background:var(--bg-panel2);color:var(--text-dim);font-size:7.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;border-bottom:2px solid var(--border)"';
+
+  function buildTable(bucketNum, title, accentColor) {
+    const bStr = String(bucketNum);
+    const t = tort[bStr] || {};
+
+    // Build sector data for this bucket
+    const secData = {};
+    sa.forEach(s => { secData[s.sector] = { q_ret: s["q"+bucketNum]||0, spread: s.spread||0 }; });
+
+    let html = `<div style="font-size:10px;font-weight:800;color:${accentColor};padding:8px 10px 4px;background:var(--bg-panel);border-bottom:2px solid ${accentColor};letter-spacing:.5px">${title}</div>`;
+    html += `<table style="width:100%;border-collapse:collapse;font-size:9px;font-family:'Segoe UI',sans-serif">
+      <thead><tr>
+        <th ${SH} style="text-align:left;min-width:140px">METRIC</th>
+        ${sectors.map(s=>`<th ${SH}>${s.replace(" ","<br/>")}</th>`).join("")}
+        <th ${SH}>Universe</th>
+      </tr></thead><tbody>`;
+
+    const rows2 = [
+      ["CAGR – Quintile", s => secData[s]?.q_ret, v=>pct(v,1,true), vc],
+      ["Excess Return vs. Universe", s => (secData[s]?.q_ret||0)-(result.universe_metrics?.cagr||0), v=>pct(v,1,true), vc],
+      ["% 1-Period Outperform", () => t.pct_1y_beats_univ, v=>pct(v,1), v=>v>=0.6?"color:#4ade80":"color:var(--text)"],
+      ["% 3-Year Outperform",  () => t.pct_3y_beats_univ, v=>pct(v,1), v=>v>=0.7?"color:#4ade80":"color:var(--text)"],
+      ["Maximum Gain",  () => t.max_gain,  v=>pct(v,1,true), ()=>"color:#4ade80"],
+      ["Maximum Loss",  () => t.max_loss,  v=>pct(v,1),      ()=>"color:#f87171"],
+      ["Sharpe Ratio",  () => (result.bucket_metrics||{})[bStr]?.sharpe, v=>v?.toFixed(2)||"—", v=>v>=0.5?"color:#4ade80":"color:var(--text)"],
+      ["Beta (vs. Universe)", () => t.beta_vs_univ, v=>v?.toFixed(2)||"—", ()=>"color:var(--text)"],
+      ["Alpha (vs. Universe)", () => t.alpha_vs_univ, v=>pct(v,2,true), vc],
+      ["Portfolio Size",       () => t.avg_portfolio_size, v=>v?Math.round(v):"—", ()=>"color:var(--text)"],
+    ];
+
+    rows2.forEach(([label, getter, fmt, colorFn], ri) => {
+      const bg = ri%2===0?"background:var(--bg)":"background:var(--bg-panel)";
+      html += `<tr style="${bg}"><td ${SL}>${label}</td>`;
+      sectors.forEach(sec => {
+        const raw = typeof getter === "function" ? (getter.length>0?getter(sec):getter()) : null;
+        const formatted = raw!=null ? fmt(raw) : "—";
+        const color = raw!=null ? colorFn(raw) : "color:var(--text-dim)";
+        html += `<td ${S} style="${S.slice(7,-1)};${color}">${formatted}</td>`;
+      });
+      // Universe column
+      const uRaw = typeof getter === "function" && getter.length===0 ? getter() : null;
+      html += `<td ${S} style="${S.slice(7,-1)};color:var(--text-dim)">${uRaw!=null?fmt(uRaw):"—"}</td>`;
+      html += "</tr>";
+    });
+
+    html += "</tbody></table>";
+    return html;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "overflow-x:auto;flex-shrink:0;border:1px solid var(--border);border-radius:4px;margin:0 12px 12px";
+  wrap.innerHTML = buildTable(1, "TOP QUINTILE (Q1)", "#4ade80")
+                 + '<div style="height:4px;background:var(--border)"></div>'
+                 + buildTable(n, "BOTTOM QUINTILE (Q"+n+")", "#f87171");
+  return wrap;
+}
+
+// ── Average Excess Returns vs Universe bar chart ─────────────────────────────
+function ftDrawExcessReturnBar(divId, buckets, tort, universeMetrics) {
+  const labels = buckets.map(b=>"Q"+b);
+  const vals   = buckets.map(b => {
+    const t = (tort||{})[String(b)] || {};
+    return t.avg_excess_vs_univ!=null ? +(t.avg_excess_vs_univ*100).toFixed(2) : null;
+  });
+  Plotly.newPlot(divId, [{
+    x: labels, y: vals, type:"bar",
+    marker:{ color: vals.map((v,i)=>v!=null?(v>=0?"rgba(74,222,128,0.8)":"rgba(248,113,113,0.8)"):"rgba(148,163,184,0.5)") },
+    text: vals.map(v=>v!=null?((v>=0?"+":"")+v+"%"):""),
+    textposition:"outside", textfont:{size:9,color:FT_COLORS.tick},
+    showlegend:false,
+  },{
+    x:["Q1",labels[labels.length-1]], y:[0,0], type:"scatter", mode:"lines",
+    line:{color:FT_COLORS.tick,width:0.8}, showlegend:false,
+  }], {
+    paper_bgcolor:FT_COLORS.bg, plot_bgcolor:FT_COLORS.plot_bg,
+    margin:{l:44,r:8,t:30,b:36},
+    title:{text:"Average Excess Returns vs. Universe",font:{size:10,color:FT_COLORS.tick},x:0.5,xanchor:"center"},
+    font:{family:"Segoe UI,Arial",size:9,color:FT_COLORS.tick},
+    xaxis:{gridcolor:FT_COLORS.grid,tickfont:{size:9,color:FT_COLORS.tick}},
+    yaxis:{gridcolor:FT_COLORS.grid,tickfont:{size:9,color:FT_COLORS.tick},
+           ticksuffix:"%",zeroline:true,zerolinecolor:FT_COLORS.tick,zerolinewidth:1,autorange:true},
+    showlegend:false,
+  }, FT_CFG);
+}
+
+// ── Rolling 3-Year Annualized Excess Returns: Top vs Bottom ──────────────────
+function ftDrawRolling3YTopBottom(divId, buckets, tort) {
+  const n = buckets.length;
+  const t1 = (tort||{})["1"] || {};
+  const tn = (tort||{})[String(n)] || {};
+  const x1  = t1.roll_3y_dates || [];
+  const y1  = (t1.roll_3y_excess||[]).map(v=>+(v*100).toFixed(2));
+  const xn  = tn.roll_3y_dates || [];
+  const yn  = (tn.roll_3y_excess||[]).map(v=>+(v*100).toFixed(2));
+
+  if(!x1.length && !xn.length) return;
+
+  Plotly.newPlot(divId, [
+    { x:x1, y:y1, type:"scatter", mode:"lines",
+      name:"Top Quintile (Q1)",
+      line:{color:"rgba(74,222,128,0.9)",width:1.5},
+      fill:"tozeroy", fillcolor:"rgba(74,222,128,0.12)" },
+    { x:xn, y:yn, type:"scatter", mode:"lines",
+      name:"Bottom Quintile (Q"+n+")",
+      line:{color:"rgba(248,113,113,0.9)",width:1.5},
+      fill:"tozeroy", fillcolor:"rgba(248,113,113,0.12)" },
+    { x:x1.length?x1:xn, y:(x1.length?x1:xn).map(()=>0),
+      type:"scatter", mode:"lines",
+      line:{color:FT_COLORS.tick,width:0.8}, showlegend:false },
+  ], {
+    paper_bgcolor:FT_COLORS.bg, plot_bgcolor:FT_COLORS.plot_bg,
+    margin:{l:48,r:8,t:30,b:36},
+    title:{text:"Rolling 3-Year Periods, Annualized Excess Returns: Top/Bottom vs. Universe",
+           font:{size:10,color:FT_COLORS.tick},x:0.5,xanchor:"center"},
+    font:{family:"Segoe UI,Arial",size:9,color:FT_COLORS.tick},
+    legend:{orientation:"h",x:0,y:1.12,font:{size:9,color:FT_COLORS.tick}},
+    xaxis:{type:"date",gridcolor:FT_COLORS.grid,tickfont:{size:8,color:FT_COLORS.tick}},
+    yaxis:{gridcolor:FT_COLORS.grid,tickfont:{size:8,color:FT_COLORS.tick},
+           ticksuffix:"%",zeroline:true,zerolinecolor:FT_COLORS.tick,zerolinewidth:1,autorange:true},
+    hovermode:"x unified",
+  }, FT_CFG);
+}
+
 
 // ── Build Factor Tearsheet metrics table ────────────────────────────────────
 function ftBuildMetricsTable(factorMetrics, buckets, bucketMetrics) {
