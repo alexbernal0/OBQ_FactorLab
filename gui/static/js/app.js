@@ -271,7 +271,10 @@ function renderTable() {
       <div class="fl-td" style="flex:0 0 48px">${m.omega!=null?(+m.omega).toFixed(2):"—"}</div>
       <div class="fl-td" style="flex:0 0 45px">${m.lake_ratio!=null?(+m.lake_ratio).toFixed(3):"—"}</div>
       <div class="fl-td dim" style="flex:0 0 40px">${m.n_periods||run.result?.n_periods||"—"}</div>
-      <div class="fl-td dim" style="flex:0 0 45px">${run.metrics?.elapsed_s!=null?run.metrics.elapsed_s+"s":"—"}</div>
+      <div class="fl-td ${(m.profit_factor||0)>=1.5?'g':''}" style="flex:0 0 45px">${m.profit_factor!=null?(+m.profit_factor).toFixed(2):"—"}</div>
+      <div class="fl-td ${(m.system_score||0)>=1?'g':''}" style="flex:0 0 50px">${m.system_score!=null?(+m.system_score).toFixed(2):"—"}</div>
+      <div class="fl-td ${(m.equity_r2||0)>=0.95?'g':(m.equity_r2||0)>=0.85?'':''}" style="flex:0 0 42px">${m.equity_r2!=null?(+m.equity_r2).toFixed(3):"—"}</div>
+      <div class="fl-td dim" style="flex:0 0 38px">${run.metrics?.elapsed_s!=null?run.metrics.elapsed_s+"s":"—"}</div>
       <div class="fl-td dim" style="flex:1;font-size:10px">${run.run_label.split(" · ").slice(1).join(" · ")}</div>
     `;
     body.appendChild(tr);
@@ -552,6 +555,7 @@ function _renderTearsheet(run_id) {
   mrow("Exposure",           m.exposure!=null?pct(m.exposure):"—");
 
   msec("STATISTICAL");
+  mrow("Equity R²",          m.equity_r2!=null?num(m.equity_r2,4):"—", m.equity_r2>=0.95?"g":m.equity_r2>=0.85?"":"r");
   mrow("Sharpe t-stat",      num(m.sharpe_tstat));
   mrow("Haircut Sharpe",     num(m.haircut_sharpe));
   mrow("Sharpe 95% CI",      m.sharpe_ci_95?`[${num(m.sharpe_ci_95[0])}, ${num(m.sharpe_ci_95[1])}]`:"—");
@@ -598,14 +602,14 @@ function _renderTearsheet(run_id) {
     const {box:ib,id:ii}=pBox("",160,true); ir.appendChild(ib); icId2=ii;
   }
 
-  // ── Draw all Plotly charts after DOM is rendered ───────────────────────────
-  setTimeout(() => {
+  // ── Draw all Plotly charts — two-pass: draw at 200ms, force resize at 1000ms ─
+  function _drawAll() {
     // Equity + Drawdown joined
     try { drawEquityWithDD(eqId, dates, equity); } catch(e) { console.error("equity+dd",e); }
     // Annual bars
     if (annId && result.annual_ret_by_year?.length)
       try { drawAnnualBars(annId, result.annual_ret_by_year); } catch(e) {}
-    // Rolling combined + max DD + vol + solo sharpe
+    // Rolling combined + max DD + vol + sortino
     try { drawRollingCombined(rcId, dates, equity); } catch(e) { console.error("rc",e); }
     try { drawRollingMaxDD(rmdId, dates, equity); } catch(e) { console.error("rmd",e); }
     try { drawRollingVol(rvId, dates, equity); } catch(e) { console.error("rv",e); }
@@ -625,7 +629,17 @@ function _renderTearsheet(run_id) {
     // Quintile-specific
     if (scId) try { drawSectorBar(scId, result.sector_analysis); } catch(e) {}
     if (icId2) try { drawIC(icId2, result.ic_data); } catch(e) {}
-  }, 50);
+
+    // Force Plotly to resize all charts — fixes invisible lines when container was 0-width at draw time
+    setTimeout(() => {
+      document.querySelectorAll("#ts-content [id^=plt_]").forEach(d => {
+        try { Plotly.Plots.resize(d); } catch(e) {}
+      });
+    }, 600);
+  }
+
+  // 200ms — grid layout should be complete by then
+  setTimeout(_drawAll, 200);
 }
 
 // ── Image export — renders tearsheet entirely within app using Plotly.toImage ─

@@ -164,14 +164,16 @@ def compute_all(
     common_sense = float(tail_r * pf) if np.isfinite(pf) else tail_r
     cpc = float(wr_mo * payoff * pf) if np.isfinite(pf) else 0.0
 
-    # K-ratio (linear regression on log equity)
+    # K-ratio and R² of equity curve (log-linear fit — how close to a straight line)
     if len(eq) > 2:
         t = np.arange(len(eq))
         log_eq = np.log(eq)
         slope, intercept, r_val, p_val, se = stats.linregress(t, log_eq)
-        k_ratio = float(slope / se * np.sqrt(periods_per_year)) if se > 0 else 0.0
+        k_ratio    = float(slope / se * np.sqrt(periods_per_year)) if se > 0 else 0.0
+        equity_r2  = float(r_val ** 2)   # R² of log-equity vs time (1.0 = perfect straight line)
     else:
-        k_ratio = 0.0
+        k_ratio   = 0.0
+        equity_r2 = 0.0
 
     # Probabilistic Sharpe Ratio
     sr_std = float(np.sqrt((1 + 0.5 * sharpe**2 - skew * sharpe + (kurt/4) * sharpe**2) / (n - 1)))
@@ -312,6 +314,7 @@ def compute_all(
         max_consec_wins=max_consec_wins, max_consec_losses=max_consec_losses,
         exposure=exposure,
         # Statistical
+        equity_r2=equity_r2,
         k_ratio=k_ratio, psr=psr_val, sharpe_tstat=sr_tstat,
         sharpe_ci_95=[sr_ci_lo, sr_ci_hi],
         haircut_sharpe=haircut_sharpe,

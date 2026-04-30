@@ -3,6 +3,9 @@ import os, sys, json, threading, queue, time, uuid, math
 from pathlib import Path
 from flask import Flask, render_template, jsonify, request, Response, stream_with_context
 
+# Window reference — set by main.py after webview.create_window()
+_webview_window = None
+
 # Pre-cached SPY result — computed once at startup, served instantly to UI
 _spy_cache: dict = {}
 _spy_cache_lock = threading.Lock()
@@ -238,11 +241,10 @@ def evaljs():
     if not js:
         return jsonify({"error": "no js"}), 400
     try:
-        # Access the global webview window reference
-        import __main__ as _main
-        win = getattr(_main, "_webview_window", None)
+        import gui.app as _self
+        win = _self._webview_window
         if win is None:
-            return jsonify({"error": "no webview window ref"}), 503
+            return jsonify({"error": "no webview window ref — app not ready"}), 503
         result = win.evaluate_js(js)
         return jsonify({"result": result})
     except Exception as e:

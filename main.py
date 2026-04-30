@@ -39,8 +39,8 @@ if __name__ == "__main__":
         confirm_close=False,
     )
 
-    # Make window accessible to Flask's /api/evaljs and /api/snap endpoints
-    import __main__ as _mm
-    _mm._webview_window = window
+    # Store window in gui.app module so evaljs/snap endpoints can access it
+    import gui.app as _gui_app
+    _gui_app._webview_window = window
 
     webview.start()
