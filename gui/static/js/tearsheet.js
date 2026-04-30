@@ -463,18 +463,21 @@ function drawCrisisGrid(containerId, dates, equity) {
       const divId="crisis_"+idx+"_"+containerId;
       const d=document.createElement("div"); d.id=divId; d.style.cssText="height:100px;width:100%";
       cell.appendChild(d);
+      // MUST append cell to container BEFORE Plotly.newPlot so the div exists in DOM
+      container.appendChild(cell);
       const col=norm[norm.length-1]>=100?"#0066cc":"#dc2626";
       Plotly.newPlot(divId,[
-        {x:sliceDt,y:norm,type:"scatter",mode:"lines",line:{color:col,width:1.2},showlegend:false},
+        {x:sliceDt,y:norm,type:"scatter",mode:"lines",line:{color:col,width:1.5},showlegend:false},
         {x:[sliceDt[0],sliceDt[sliceDt.length-1]],y:[100,100],type:"scatter",mode:"lines",
          line:{color:"#9ca3af",width:0.8,dash:"dot"},showlegend:false},
       ],{
-        paper_bgcolor:"#fff",plot_bgcolor:"#fff",
+        paper_bgcolor:"#fff",plot_bgcolor:"#fafafa",
         margin:{l:28,r:4,t:2,b:24},
-        xaxis:{gridcolor:"#f3f4f6",tickfont:{size:6},tickcolor:"#9ca3af",nticks:3},
-        yaxis:{gridcolor:"#f3f4f6",tickfont:{size:6},tickcolor:"#9ca3af",ticksuffix:""},
+        xaxis:{type:"date",gridcolor:"#eeeeee",tickfont:{size:6},tickcolor:"#9ca3af",nticks:3},
+        yaxis:{gridcolor:"#eeeeee",tickfont:{size:6},tickcolor:"#9ca3af",autorange:true},
         hovermode:false,
       },{displayModeBar:false,responsive:true});
+      return; // cell already appended above
     }
     container.appendChild(cell);
   });
