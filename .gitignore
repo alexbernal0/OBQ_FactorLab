@@ -17,7 +17,8 @@ build/
 # Logs (keep structure, ignore content)
 logs/*.log
 logs/*.err
-logs/_snap*.png
+logs/*.png
+logs/*.jpg
 
 # Results (large output files)
 results/*.csv
