@@ -6,7 +6,7 @@ const PLOT_LAYOUT = {
   font:  { family: "Segoe UI, Arial, sans-serif", size: 10, color: "#374151" },
   margin: { l: 52, r: 12, t: 10, b: 36 },
   legend: { orientation: "h", x: 0, y: 1.14, font: { size: 9, color:"#374151" }, bgcolor: "transparent" },
-  xaxis: { gridcolor: "#eeeeee", linecolor: "#cccccc", tickfont: { size: 8, color:"#374151" }, tickcolor: "#9ca3af", showgrid: true },
+  xaxis: { type: "date", gridcolor: "#eeeeee", linecolor: "#cccccc", tickfont: { size: 8, color:"#374151" }, tickcolor: "#9ca3af", showgrid: true },
   yaxis: { gridcolor: "#eeeeee", linecolor: "#cccccc", tickfont: { size: 8, color:"#374151" }, tickcolor: "#9ca3af",
            zeroline: true, zerolinecolor: "#374151", zerolinewidth: 1, autorange: true },
   hovermode: "x unified",
@@ -19,7 +19,7 @@ function _L(extra) { return Object.assign({}, PLOT_LAYOUT, extra || {}); }
 // ── Equity + Drawdown joined subplot ────────────────────────────────────────
 function drawEquityWithDD(divId, dates, equity) {
   if (!dates?.length || !equity?.length) return;
-  const x = dates.map(d => String(d).slice(0,7));
+  const x = dates.map(d => String(d).slice(0,10));
   let peak = equity[0];
   const dd = equity.map(v => { peak = Math.max(peak, v); return (v / peak - 1) * 100; });
 
@@ -56,7 +56,7 @@ function drawEquityWithDD(divId, dates, equity) {
 // Keep standalone versions for other uses
 function drawEquity(divId, dates, equity) {
   if (!dates?.length || !equity?.length) return;
-  const x = dates.map(d => String(d).slice(0,7));
+  const x = dates.map(d => String(d).slice(0,10));
   Plotly.newPlot(divId, [{
     x, y: equity, type:"scatter", mode:"lines", name:"Portfolio",
     line:{ color:"#0066cc", width:1.5 },
@@ -66,7 +66,7 @@ function drawEquity(divId, dates, equity) {
 
 function drawDrawdown(divId, dates, equity) {
   if (!dates?.length || !equity?.length) return;
-  const x = dates.map(d => String(d).slice(0,7));
+  const x = dates.map(d => String(d).slice(0,10));
   let peak = equity[0];
   const dd = equity.map(v => { peak = Math.max(peak,v); return (v/peak-1)*100; });
   Plotly.newPlot(divId,[{
@@ -102,7 +102,7 @@ function drawRollingVol(divId, dates, equity) {
     const sd=Math.sqrt(w.reduce((s,v)=>s+(v-mu)**2,0)/W);
     return +(sd*Math.sqrt(12)*100).toFixed(2);
   });
-  const x=dates.slice(1).map(d=>String(d).slice(0,7));
+  const x=dates.slice(1).map(d=>String(d).slice(0,10));
   Plotly.newPlot(divId,[{
     x, y:rolVol, type:"scatter", mode:"lines", name:"Ann. Vol %",
     line:{color:"#7c3aed",width:2.5}, fill:"tozeroy", fillcolor:"rgba(124,58,237,0.15)",
@@ -124,7 +124,7 @@ function drawRollingSortino(divId, dates, equity) {
     const dn=w.filter(v=>v<0); const ds=dn.length>0?Math.sqrt(dn.reduce((s,v)=>s+v*v,0)/dn.length):0;
     return ds>0?+Math.min(10, mu/ds*Math.sqrt(12)).toFixed(3):null;
   });
-  const x=dates.slice(1).map(d=>String(d).slice(0,7));
+  const x=dates.slice(1).map(d=>String(d).slice(0,10));
   Plotly.newPlot(divId,[
     { x, y:rs, type:"scatter", mode:"lines", name:"Sortino",
       line:{color:"#b45309",width:2.5}, fill:"tozeroy", fillcolor:"rgba(180,83,9,0.15)" },
@@ -181,7 +181,7 @@ function drawDrawdown(divId, dates, equity) {
   let peak = equity[0];
   const dd = equity.map(v => { peak=Math.max(peak,v); return (v/peak-1)*100; });
   Plotly.newPlot(divId, [{
-    x: dates.map(d=>String(d).slice(0,7)), y: dd,
+    x: dates.map(d=>String(d).slice(0,10)), y: dd,
     type:"scatter", mode:"lines", name:"Drawdown",
     line:{ color:"#dc2626", width:1 },
     fill:"tozeroy", fillcolor:"rgba(220,38,38,0.15)",
@@ -210,7 +210,7 @@ function drawRollingSharpe(divId, dates, equity) {
     const sd=Math.sqrt(w.reduce((s,v)=>s+(v-mu)**2,0)/W);
     return sd>0?mu/sd*Math.sqrt(12):null;
   });
-  const x=dates.slice(1).map(d=>String(d).slice(0,7));
+  const x=dates.slice(1).map(d=>String(d).slice(0,10));
   Plotly.newPlot(divId, [
     { x, y:rs, type:"scatter", mode:"lines", name:"Rolling Sharpe", line:{color:"#0066cc",width:1.5}, fill:"tozeroy", fillcolor:"rgba(0,102,204,0.07)" },
     { x:[x[0],x[x.length-1]], y:[0,0], type:"scatter", mode:"lines", line:{color:"#9ca3af",width:1,dash:"dot"}, showlegend:false },
@@ -219,7 +219,7 @@ function drawRollingSharpe(divId, dates, equity) {
 
 function drawIC(divId, ic_data) {
   if (!ic_data?.length) return;
-  const x=ic_data.map(d=>String(d.date||"").slice(0,7));
+  const x=ic_data.map(d=>String(d.date||"").slice(0,10));
   const y=ic_data.map(d=>+((d.ic_value??d.ic??0)*100).toFixed(2));
   Plotly.newPlot(divId,[{x,y,type:"bar",marker:{color:y.map(v=>v>=0?"rgba(0,102,204,0.6)":"rgba(220,38,38,0.6)")},name:"IC (%)"}],
     _L({yaxis:{...PLOT_LAYOUT.yaxis,ticksuffix:"%"},showlegend:false}),PLOT_CFG);
@@ -289,7 +289,8 @@ function drawRollingCombined(divId, dates, equity) {
     const dn=w.filter(v=>v<0); const ds=dn.length>0?Math.sqrt(dn.reduce((s,v)=>s+v*v,0)/dn.length):0;
     rso.push(ds>0?+Math.min(10, mu/ds*Math.sqrt(12)).toFixed(3):null);
   }
-  const x=dates.slice(1).map(d=>String(d).slice(0,7));
+  // Use full date strings — Plotly needs YYYY-MM-DD for date axis
+  const x=dates.slice(1).map(d=>String(d).slice(0,10));
   Plotly.newPlot(divId,[
     {x,y:rs, type:"scatter",mode:"lines",name:"Sharpe", line:{color:"#1d4ed8",width:2.5},fill:"tozeroy",fillcolor:"rgba(29,78,216,0.12)"},
     {x,y:rso,type:"scatter",mode:"lines",name:"Sortino",line:{color:"#b45309",width:2,dash:"dash"}},
@@ -308,7 +309,7 @@ function drawRollingMaxDD(divId, dates, equity) {
     w.forEach(r=>{eq*=(1+r);peak=Math.max(peak,eq);mdd=Math.min(mdd,(eq/peak-1)*100);});
     return +mdd.toFixed(2);
   });
-  const x=dates.slice(1).map(d=>String(d).slice(0,7));
+  const x=dates.slice(1).map(d=>String(d).slice(0,10));
   Plotly.newPlot(divId,[
     {x,y:rmdd,type:"scatter",mode:"lines",name:"Rolling Max DD",
      line:{color:"#dc2626",width:2.5},fill:"tozeroy",fillcolor:"rgba(220,38,38,0.30)"},
@@ -389,7 +390,7 @@ function drawActiveReturns(divId, dates, equity, bmEquity) {
   for(let i=1;i<equity.length;i++){
     mRets.push(equity[i]/equity[i-1]-1);
     mBm.push(bmEquity[i]?bmEquity[i]/bmEquity[i-1]-1:0);
-    mLabels.push(String(dates[i]).slice(0,7));
+    mLabels.push(String(dates[i]).slice(0,10));
   }
   const active=mRets.map((r,i)=>+((r-mBm[i])*100).toFixed(3));
   Plotly.newPlot(divId,[
@@ -407,7 +408,7 @@ function buildBestWorstTable(dates, equity, topN) {
   if(!dates?.length||!equity?.length) return document.createElement("div");
   const months=[];
   for(let i=1;i<equity.length;i++){
-    months.push({label:String(dates[i]).slice(0,7), ret:+((equity[i]/equity[i-1]-1)*100).toFixed(2)});
+    months.push({label:String(dates[i]).slice(0,10), ret:+((equity[i]/equity[i-1]-1)*100).toFixed(2)});
   }
   months.sort((a,b)=>b.ret-a.ret);
   const best=months.slice(0,topN), worst=months.slice(-topN).reverse();

@@ -111,7 +111,7 @@ async function startRun(overrides = {}) {
   }
 
   const run_id = resp.run_id;
-  const label = `${cfg.model_type === "topn" ? "TOP-"+cfg.top_n : "Q"+cfg.n_quintiles} · ${cfg.factor.toUpperCase()} · ${cfg.start_date.slice(0,7)}`;
+  const label = `${cfg.model_type === "topn" ? "TOP-"+cfg.top_n : "Q"+cfg.n_quintiles} · ${cfg.factor.toUpperCase()} · ${cfg.start_date.slice(0,10)}`;
   const runObj = { run_id, run_label: label, status: "running", cfg, metrics: null, result: null };
   _runs.unshift(runObj);
   renderTable();
