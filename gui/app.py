@@ -249,6 +249,144 @@ def evaljs():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/export/csv", methods=["POST"])
+def export_csv():
+    """Export tearsheet metrics to CSV in Downloads folder."""
+    import csv, datetime as _dt, pathlib as _pl, math as _math
+    data = request.get_json(force=True) or {}
+    run_label = data.get("run_label", "backtest")
+    metrics   = data.get("metrics") or {}
+    result    = data.get("result") or {}
+
+    ts   = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in run_label)[:40]
+    fname = f"OBQ_FactorLab_{safe}_{ts}.csv"
+    path  = _pl.Path.home() / "Downloads" / fname
+
+    # Flatten metrics + key result fields
+    def _fmt(v):
+        if v is None: return ""
+        if isinstance(v, (list, dict)): return str(v)
+        try:
+            f = float(v)
+            return "" if (_math.isnan(f) or _math.isinf(f)) else str(round(f, 6))
+        except Exception:
+            return str(v)
+
+    rows = [
+        ("Run Label",   run_label),
+        ("Mode",        result.get("mode", "")),
+        ("Start Date",  result.get("start_date", "")),
+        ("End Date",    result.get("end_date", "")),
+        ("N Periods",   result.get("n_periods", "")),
+        ("Export Date", _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        ("", ""),
+        ("METRIC", "VALUE"),
+    ]
+    for k, v in sorted(metrics.items()):
+        rows.append((k, _fmt(v)))
+
+    try:
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerows(rows)
+        return jsonify({"path": str(path), "filename": fname})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/export/pdf", methods=["POST"])
+def export_pdf_report():
+    """Export tearsheet as PDF to Downloads folder using matplotlib."""
+    import datetime as _dt, pathlib as _pl, math as _math
+    data = request.get_json(force=True) or {}
+    run_label = data.get("run_label", "backtest")
+    metrics   = data.get("metrics") or {}
+    result    = data.get("result") or {}
+
+    ts   = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in run_label)[:40]
+    fname = f"OBQ_FactorLab_{safe}_{ts}.pdf"
+    path  = _pl.Path.home() / "Downloads" / fname
+
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import matplotlib.gridspec as gridspec
+        from matplotlib.backends.backend_pdf import PdfPages
+        import numpy as np
+
+        equity = result.get("portfolio_equity", [])
+        dates  = result.get("equity_dates", [])
+
+        def _fmt(v, pct=False):
+            if v is None: return "—"
+            try:
+                f = float(v)
+                if _math.isnan(f) or _math.isinf(f): return "—"
+                if pct: return f"{f*100:.2f}%"
+                return f"{f:.4f}"
+            except Exception:
+                return str(v)
+
+        with PdfPages(str(path)) as pdf:
+            # Page 1 — Equity + Drawdown + KPIs
+            fig = plt.figure(figsize=(11, 8.5))
+            fig.patch.set_facecolor("white")
+            plt.suptitle(f"{run_label}\nOBQ Factor Lab Tearsheet — {result.get('start_date','')} to {result.get('end_date','')}",
+                         fontsize=12, fontweight="bold", y=0.98)
+
+            gs = gridspec.GridSpec(3, 1, figure=fig, top=0.92, bottom=0.06, hspace=0.35)
+
+            if equity and dates:
+                ax1 = fig.add_subplot(gs[0:2])
+                ax1.plot(dates, equity, color="#0066cc", lw=1.2, label="Portfolio")
+                ax1.fill_between(dates, equity, 1.0, alpha=0.07, color="#0066cc")
+                ax1.set_ylabel("Growth (×)"); ax1.set_title("Cumulative Equity"); ax1.grid(True, alpha=0.3)
+                ax1.tick_params(axis='x', labelsize=7)
+
+                ax2 = fig.add_subplot(gs[2])
+                eq_arr = np.array(equity, dtype=float)
+                peak = np.maximum.accumulate(eq_arr)
+                dd = (eq_arr / peak - 1) * 100
+                ax2.fill_between(dates, dd, 0, color="#dc2626", alpha=0.4, label="Drawdown")
+                ax2.set_ylabel("DD%"); ax2.set_title("Drawdown"); ax2.grid(True, alpha=0.3)
+                ax2.tick_params(axis='x', labelsize=7)
+
+            pdf.savefig(fig, bbox_inches="tight")
+            plt.close(fig)
+
+            # Page 2 — Metrics table
+            pct_keys = {"cagr","total_return","expected_monthly","expected_annual","ann_vol",
+                        "max_dd","avg_dd","var_95","var_99","cvar_95","cvar_99",
+                        "win_rate_monthly","win_rate_yearly","win_rate_quarterly",
+                        "avg_up_month","avg_down_month","best_month","worst_month",
+                        "best_year","worst_year","exposure","alpha","tracking_error",
+                        "up_capture","down_capture","m_squared","psr"}
+            fig2, ax = plt.subplots(figsize=(11, 8.5))
+            fig2.patch.set_facecolor("white"); ax.axis("off")
+            plt.title(f"{run_label} — Performance Metrics", fontsize=11, fontweight="bold")
+            rows = [["Metric", "Value"]]
+            for k, v in sorted(metrics.items()):
+                is_pct = k in pct_keys
+                rows.append([k.replace("_"," ").title(), _fmt(v, is_pct)])
+            tbl = ax.table(cellText=rows[1:], colLabels=rows[0], loc="center",
+                           cellLoc="left", colWidths=[0.55, 0.35])
+            tbl.auto_set_font_size(False); tbl.set_fontsize(7.5)
+            tbl.scale(1, 1.2)
+            for (r,c), cell in tbl.get_celld().items():
+                if r == 0: cell.set_facecolor("#1e3a5f"); cell.set_text_props(color="white", fontweight="bold")
+                elif r % 2 == 0: cell.set_facecolor("#f8f9fa")
+            pdf.savefig(fig2, bbox_inches="tight")
+            plt.close(fig2)
+
+        return jsonify({"path": str(path), "filename": fname})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/snap")
 def snap():
     """Dev tool: capture screen, return base64 PNG. No file saved."""

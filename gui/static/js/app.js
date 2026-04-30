@@ -193,7 +193,7 @@ async function startSPY() {
     setProgress(100);
     setTimeout(() => setProgress(0), 800);
     const m = runObj.metrics;
-    setStatus(`SPY B&H  ${result.start_date} → ${result.end_date}  ·  CAGR ${((m?.cagr||0)*100).toFixed(1)}%  ·  Sharpe ${(m?.sharpe||0).toFixed(2)}`);
+    setStatus("SPY B&H  " + result.start_date + " to " + result.end_date + "  CAGR " + ((m?.cagr||0)*100).toFixed(1) + "%  Sharpe " + (m?.sharpe||0).toFixed(2));
     _spyLoaded = true;
     setActiveRow(run_id);
     showTearsheet(run_id);
@@ -326,9 +326,14 @@ function _renderTearsheet(run_id) {
   const hdrL = el("div");
   hdrL.innerHTML = `<div class="ts-name">${run.run_label}</div>
     <div class="ts-meta">${result.start_date} &#8594; ${result.end_date} &nbsp;&middot;&nbsp; ${result.n_periods} monthly periods</div>`;
+  const btnWrap = el("div"); btnWrap.style.cssText = "display:flex;gap:6px;align-items:center";
   const pdfBtn = el("button","btn-pdf");
   pdfBtn.textContent = "PDF"; pdfBtn.onclick = () => exportPDF(run);
-  hdr.append(hdrL, pdfBtn);
+  const csvBtn = el("button","btn-pdf");
+  csvBtn.style.background = "#16a34a";
+  csvBtn.textContent = "CSV"; csvBtn.onclick = () => exportCSV(run);
+  btnWrap.append(csvBtn, pdfBtn);
+  hdr.append(hdrL, btnWrap);
   content.appendChild(hdr);
 
   // ── 2. KPI STRIP ───────────────────────────────────────────────────────────
@@ -355,12 +360,11 @@ function _renderTearsheet(run_id) {
   });
   content.appendChild(kpiRow);
 
-  // ── 3. EQUITY + DRAWDOWN ────────────────────────────────────────────────────
-  const row1 = el("div","ts-charts"); content.appendChild(row1);
-  const {box:eqBox, id:eqId} = pBox("CUMULATIVE EQUITY", 220);
-  row1.appendChild(eqBox);
-  const {box:ddBox, id:ddId} = pBox("DRAWDOWN", 220);
-  row1.appendChild(ddBox);
+  // 3. EQUITY + DRAWDOWN (joined subplot, full width)
+  sec("EQUITY CURVE & DRAWDOWN");
+  const eqRow = el("div","ts-charts wide"); content.appendChild(eqRow);
+  const {box:eqBox, id:eqId} = pBox("", 380, true);
+  eqRow.appendChild(eqBox);
 
   // ── 4. HEATMAP ──────────────────────────────────────────────────────────────
   if (result.monthly_heatmap) {
@@ -379,11 +383,33 @@ function _renderTearsheet(run_id) {
     annRow.appendChild(annBox); annId = id;
   }
 
-  // ── 6. ROLLING SHARPE ───────────────────────────────────────────────────────
-  sec("ROLLING 12-MO SHARPE");
-  const rsRow = el("div","ts-charts wide"); content.appendChild(rsRow);
-  const {box:rsBox, id:rsId} = pBox("", 180, true);
-  rsRow.appendChild(rsBox);
+  // ── 6. ROLLING METRICS (Sharpe + Sortino + Vol) ────────────────────────────
+  sec("ROLLING METRICS");
+  const rRow = el("div","ts-charts"); content.appendChild(rRow);
+  const {box:rsBox, id:rsId} = pBox("ROLLING 12-MO SHARPE", 180);
+  rRow.appendChild(rsBox);
+  const {box:rstBox, id:rstId} = pBox("ROLLING 12-MO SORTINO", 180);
+  rRow.appendChild(rstBox);
+
+  sec("ROLLING VOLATILITY & DISTRIBUTION");
+  const rRow2 = el("div","ts-charts"); content.appendChild(rRow2);
+  const {box:rvBox, id:rvId} = pBox("ROLLING 12-MO VOLATILITY", 180);
+  rRow2.appendChild(rvBox);
+  let distId = null;
+  if (result.period_data?.length) {
+    const monthlyRets = result.period_data.map(d => d.portfolio_return || 0);
+    const {box:dBox, id:dId} = pBox("MONTHLY RETURN DISTRIBUTION", 180);
+    rRow2.appendChild(dBox); distId = dId;
+    rRow2._monthlyRets = monthlyRets;
+  }
+
+  // 6b. DRAWDOWN DEEP DIVE TABLE
+  if (dates.length > 0 && equity.length > 0) {
+    sec("DRAWDOWN ANALYSIS - TOP PERIODS");
+    const ddWrap = el("div"); ddWrap.style.cssText = "padding:8px 12px;flex-shrink:0";
+    ddWrap.appendChild(buildDrawdownTable(dates, equity, 20));
+    content.appendChild(ddWrap);
+  }
 
   // ── 7. FULL METRICS TABLE ───────────────────────────────────────────────────
   sec("PERFORMANCE METRICS");
@@ -401,72 +427,91 @@ function _renderTearsheet(run_id) {
   const g = v => v >= 0 ? "g" : "r";
 
   msec("PERIOD");
-  mrow("Start Date",      result.start_date||"—");
-  mrow("End Date",        result.end_date||"—");
-  mrow("Periods (mo)",    result.n_periods||"—");
+  mrow("Start Date",         result.start_date||"—");
+  mrow("End Date",           result.end_date||"—");
+  mrow("Years",              m.n_years!=null?num(m.n_years):"—");
+  mrow("Periods (mo)",       result.n_periods||"—");
 
   msec("RETURNS");
-  mrow("CAGR",            pct(m.cagr),            g(m.cagr));
-  mrow("Total Return",    pct(m.total_return),     g(m.total_return));
-  mrow("Expected Monthly",pct(m.expected_monthly), g(m.expected_monthly));
-  mrow("Ann. Volatility", pct(m.ann_vol));
+  mrow("CAGR",               pct(m.cagr),              g(m.cagr));
+  mrow("Total Return",       pct(m.total_return),       g(m.total_return));
+  mrow("Expected Monthly",   pct(m.expected_monthly),   g(m.expected_monthly));
+  mrow("Expected Annual",    m.expected_annual!=null?pct(m.expected_annual):"—", g(m.expected_annual));
+  mrow("Ann. Volatility",    pct(m.ann_vol));
+  mrow("Exposure",           m.exposure!=null?pct(m.exposure):"—");
 
   msec("RISK-ADJUSTED");
-  mrow("Sharpe Ratio",    num(m.sharpe),           m.sharpe>=1?"g":m.sharpe>=0.5?"":"r");
-  mrow("Smart Sharpe",    num(m.smart_sharpe));
-  mrow("Sortino Ratio",   num(m.sortino),          m.sortino>=1?"g":"");
-  mrow("Calmar Ratio",    num(m.calmar),           m.calmar>=0.5?"g":"");
-  mrow("Omega Ratio",     num(m.omega),            m.omega>=1?"g":"");
-  mrow("Serenity Ratio",  num(m.serenity));
-  mrow("Pain Ratio",      num(m.pain_ratio));
-  mrow("Recovery Factor", num(m.recovery_factor),  m.recovery_factor>=1?"g":"r");
-  mrow("K-Ratio",         num(m.k_ratio));
-  mrow("Prob. Sharpe",    pct(m.psr),              m.psr>=0.95?"g":"");
+  mrow("Sharpe Ratio",       num(m.sharpe),             m.sharpe>=1?"g":m.sharpe>=0.5?"":"r");
+  mrow("Smart Sharpe",       num(m.smart_sharpe));
+  mrow("Sortino Ratio",      num(m.sortino),            m.sortino>=1?"g":"");
+  mrow("Smart Sortino",      m.smart_sortino!=null?num(m.smart_sortino):"—");
+  mrow("Calmar Ratio",       num(m.calmar),             m.calmar>=0.5?"g":"");
+  mrow("MAR Ratio",          m.mar_ratio!=null?num(m.mar_ratio):"—", m.mar_ratio>=0.5?"g":"");
+  mrow("Omega Ratio",        num(m.omega),              m.omega>=1?"g":"");
+  mrow("Gain/Pain Ratio",    m.gain_pain_ratio!=null?num(m.gain_pain_ratio):"—");
+  mrow("Serenity Ratio",     num(m.serenity));
+  mrow("Pain Ratio",         num(m.pain_ratio));
+  mrow("Recovery Factor",    num(m.recovery_factor),    m.recovery_factor>=1?"g":"r");
+  mrow("SystemScore",        m.system_score!=null?num(m.system_score):"—", m.system_score>=1?"g":"");
+  mrow("K-Ratio",            num(m.k_ratio));
+  mrow("Prob. Sharpe",       pct(m.psr),                m.psr>=0.95?"g":"");
+
+  msec("OBQ SUREFIRE SUITE");
+  mrow("IUDR",               m.iudr!=null?num(m.iudr):"—",           m.iudr>=10?"g":m.iudr>=1?"":"r");
+  mrow("Surefire Ratio",     m.surefire_ratio!=null?num(m.surefire_ratio):"—", m.surefire_ratio>=10?"g":m.surefire_ratio>=1?"":"r");
+  mrow("Integrated DD",      m.integrated_dd!=null?num(m.integrated_dd,4):"—");
+  mrow("Integrated Upside",  m.integrated_up!=null?num(m.integrated_up,4):"—", "g");
 
   msec("RISK");
-  mrow("Max Drawdown",    pct(m.max_dd),           "r");
-  mrow("Avg Drawdown",    pct(m.avg_dd),           "r");
-  mrow("Ulcer Index",     num(m.ulcer_index,3));
-  mrow("Pain Index",      num(m.pain_index,3));
-  mrow("Lake Ratio",      num(m.lake_ratio,3));
-  mrow("VaR 95%",         pct(m.var_95),           "r");
-  mrow("CVaR 95%",        pct(m.cvar_95),          "r");
-  mrow("VaR 99%",         pct(m.var_99),           "r");
-  mrow("CVaR 99%",        pct(m.cvar_99),          "r");
+  mrow("Max Drawdown",       pct(m.max_dd),             "r");
+  mrow("Avg Drawdown",       pct(m.avg_dd),             "r");
+  mrow("Ulcer Index",        num(m.ulcer_index,3));
+  mrow("Pain Index",         num(m.pain_index,3));
+  mrow("Lake Ratio",         num(m.lake_ratio,3));
+  mrow("VaR 95%",            pct(m.var_95),             "r");
+  mrow("CVaR 95%",           pct(m.cvar_95),            "r");
+  mrow("VaR 99%",            pct(m.var_99),             "r");
+  mrow("CVaR 99%",           pct(m.cvar_99),            "r");
 
   msec("DISTRIBUTION");
-  mrow("Skewness",        num(m.skewness));
-  mrow("Kurtosis",        num(m.kurtosis));
-  mrow("Tail Ratio",      num(m.tail_ratio));
-  mrow("Best Month",      pct(m.best_month),       "g");
-  mrow("Worst Month",     pct(m.worst_month),      "r");
-  mrow("Best Year",       m.best_year!=null?pct(m.best_year):"—","g");
-  mrow("Worst Year",      m.worst_year!=null?pct(m.worst_year):"—","r");
+  mrow("Skewness",           num(m.skewness));
+  mrow("Kurtosis",           num(m.kurtosis));
+  mrow("Tail Ratio",         num(m.tail_ratio));
+  mrow("Best Month",         pct(m.best_month),         "g");
+  mrow("Worst Month",        pct(m.worst_month),        "r");
+  mrow("Best Year",          m.best_year!=null?pct(m.best_year):"—","g");
+  mrow("Worst Year",         m.worst_year!=null?pct(m.worst_year):"—","r");
 
   msec("WIN / LOSS");
-  mrow("Win Rate (Mo)",   pct(m.win_rate_monthly), m.win_rate_monthly>=0.55?"g":"");
-  mrow("Win Rate (Yr)",   m.win_rate_yearly!=null?pct(m.win_rate_yearly):"—");
-  mrow("Avg Up Month",    pct(m.avg_up_month),     "g");
-  mrow("Avg Down Month",  pct(m.avg_down_month),   "r");
-  mrow("Payoff Ratio",    num(m.payoff_ratio),     m.payoff_ratio>=1.5?"g":"");
-  mrow("Profit Factor",   num(m.profit_factor),    m.profit_factor>=1?"g":"r");
-  mrow("Common Sense",    num(m.common_sense_ratio));
-  mrow("CPC Index",       num(m.cpc_index));
+  mrow("Win Rate (Mo)",      pct(m.win_rate_monthly),   m.win_rate_monthly>=0.55?"g":"");
+  mrow("Win Rate (Qtr)",     m.win_rate_quarterly!=null?pct(m.win_rate_quarterly):"—");
+  mrow("Win Rate (Yr)",      m.win_rate_yearly!=null?pct(m.win_rate_yearly):"—");
+  mrow("Avg Up Month",       pct(m.avg_up_month),       "g");
+  mrow("Avg Down Month",     pct(m.avg_down_month),     "r");
+  mrow("Payoff Ratio",       num(m.payoff_ratio),       m.payoff_ratio>=1.5?"g":"");
+  mrow("Profit Factor",      num(m.profit_factor),      m.profit_factor>=1?"g":"r");
+  mrow("Common Sense",       num(m.common_sense_ratio));
+  mrow("CPC Index",          num(m.cpc_index));
+  mrow("Max Consec. Wins",   m.max_consec_wins!=null?m.max_consec_wins:"—");
+  mrow("Max Consec. Losses", m.max_consec_losses!=null?m.max_consec_losses:"—","r");
+  mrow("Exposure",           m.exposure!=null?pct(m.exposure):"—");
 
   msec("STATISTICAL");
-  mrow("Sharpe t-stat",   num(m.sharpe_tstat));
-  mrow("Haircut Sharpe",  num(m.haircut_sharpe));
-  mrow("Sharpe 95% CI",   m.sharpe_ci_95?`[${num(m.sharpe_ci_95[0])}, ${num(m.sharpe_ci_95[1])}]`:"—");
-  mrow("Jarque-Bera p",   m.jarque_bera_p!=null?m.jarque_bera_p.toFixed(4):"—");
+  mrow("Sharpe t-stat",      num(m.sharpe_tstat));
+  mrow("Haircut Sharpe",     num(m.haircut_sharpe));
+  mrow("Sharpe 95% CI",      m.sharpe_ci_95?`[${num(m.sharpe_ci_95[0])}, ${num(m.sharpe_ci_95[1])}]`:"—");
+  mrow("Jarque-Bera p",      m.jarque_bera_p!=null?m.jarque_bera_p.toFixed(4):"—");
 
   msec("VS BENCHMARK");
-  mrow("Alpha (Ann)",     bm.alpha!=null?pct(bm.alpha):"—",         bm.alpha>=0?"g":"r");
-  mrow("Beta",            bm.beta!=null?num(bm.beta):"—");
-  mrow("Info Ratio",      bm.info_ratio!=null?num(bm.info_ratio):"—");
-  mrow("Tracking Error",  bm.tracking_error!=null?pct(bm.tracking_error):"—");
-  mrow("R²",              bm.r_squared!=null?num(bm.r_squared):"—");
-  mrow("Up Capture",      bm.up_capture!=null?pct(bm.up_capture):"—");
-  mrow("Down Capture",    bm.down_capture!=null?pct(bm.down_capture):"—");
+  mrow("Alpha (Ann)",        bm.alpha!=null?pct(bm.alpha):"—",       bm.alpha>=0?"g":"r");
+  mrow("Beta",               bm.beta!=null?num(bm.beta):"—");
+  mrow("Info Ratio",         bm.info_ratio!=null?num(bm.info_ratio):"—");
+  mrow("Tracking Error",     bm.tracking_error!=null?pct(bm.tracking_error):"—");
+  mrow("R²",                 bm.r_squared!=null?num(bm.r_squared):"—");
+  mrow("Up Capture",         bm.up_capture!=null?pct(bm.up_capture):"—");
+  mrow("Down Capture",       bm.down_capture!=null?pct(bm.down_capture):"—");
+  mrow("Treynor Ratio",      bm.treynor_ratio!=null?num(bm.treynor_ratio):"—");
+  mrow("M²",                 bm.m_squared!=null?pct(bm.m_squared):"—");
 
   if (result.mode === "quintile") {
     msec("FACTOR METRICS");
@@ -500,33 +545,47 @@ function _renderTearsheet(run_id) {
 
   // ── Draw all Plotly charts after DOM is rendered ───────────────────────────
   setTimeout(() => {
-    try { drawEquity(eqId, dates, equity); } catch(e) { console.error("equity",e); }
-    try { drawDrawdown(ddId, dates, equity); } catch(e) { console.error("dd",e); }
+    try { drawEquityWithDD(eqId, dates, equity); } catch(e) { console.error("equity+dd",e); }
     if (annId && result.annual_ret_by_year?.length)
       try { drawAnnualBars(annId, result.annual_ret_by_year); } catch(e) { console.error("ann",e); }
     try { drawRollingSharpe(rsId, dates, equity); } catch(e) { console.error("rs",e); }
+    try { drawRollingSortino(rstId, dates, equity); } catch(e) { console.error("rst",e); }
+    try { drawRollingVol(rvId, dates, equity); } catch(e) { console.error("rv",e); }
+    if (distId && rRow2._monthlyRets)
+      try { drawDistribution(distId, rRow2._monthlyRets); } catch(e) { console.error("dist",e); }
     if (scId) try { drawSectorBar(scId, result.sector_analysis); } catch(e) {}
     if (icId2) try { drawIC(icId2, result.ic_data); } catch(e) {}
   }, 50);
 }
 
-// ── PDF export ────────────────────────────────────────────────────────────
-async function exportPDF(run) {
-  const btn = document.querySelector(".btn-pdf");
-  if (btn) { btn.textContent = "⌛ ..."; btn.disabled = true; }
-
-  const resp = await fetch("/api/backtest/export_pdf", {
+// ── CSV export ────────────────────────────────────────────────────────────
+async function exportCSV(run) {
+  const btn = document.querySelector(".btn-pdf[style*='16a34a']");
+  if (btn) { btn.textContent = "..."; btn.disabled = true; }
+  const resp = await fetch("/api/export/csv", {
     method: "POST",
     headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ run_id: run.run_id }),
+    body: JSON.stringify({ run_id: run.run_id, run_label: run.run_label,
+                           result: run.result, metrics: run.metrics }),
   }).then(r=>r.json()).catch(e=>({error:String(e)}));
+  if (btn) { btn.textContent = "CSV"; btn.disabled = false; }
+  if (resp.path) showToast(`CSV saved: ${resp.filename}`, "success");
+  else showToast("CSV failed: "+(resp.error||"unknown"), "error");
+}
 
-  if (btn) { btn.textContent = "↓ PDF"; btn.disabled = false; }
-  if (resp.path) {
-    showToast(`PDF saved: ${resp.filename}`, "success");
-  } else {
-    showToast("PDF failed: " + (resp.error||"unknown"), "error");
-  }
+// ── PDF export ────────────────────────────────────────────────────────────
+async function exportPDF(run) {
+  const btn = document.querySelector(".btn-pdf:not([style*='16a34a'])");
+  if (btn) { btn.textContent = "..."; btn.disabled = true; }
+  const resp = await fetch("/api/export/pdf", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ run_id: run.run_id, run_label: run.run_label,
+                           result: run.result, metrics: run.metrics }),
+  }).then(r=>r.json()).catch(e=>({error:String(e)}));
+  if (btn) { btn.textContent = "PDF"; btn.disabled = false; }
+  if (resp.path) showToast(`PDF saved to Downloads: ${resp.filename}`, "success");
+  else showToast("PDF failed: "+(resp.error||"unknown"), "error");
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────

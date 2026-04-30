@@ -1,7 +1,58 @@
-"""Full OBQ tearsheet metrics — 55+ metrics matching factor_engine.py standard."""
+"""Full OBQ tearsheet metrics — 80+ metrics including OBQ Surefire Suite."""
 import numpy as np
 import scipy.stats as stats
 from typing import Optional
+
+
+# ── OBQ Surefire Suite (from MassCode 17d_REPORTING) ─────────────────────────
+
+def _integrated_drawdown(returns: np.ndarray) -> float:
+    """Area under drawdown curve — penalises depth AND duration."""
+    r = np.asarray(returns, dtype=float)
+    if len(r) == 0: return 0.0
+    eq = np.cumprod(1.0 + r)
+    peak = np.maximum.accumulate(eq)
+    dd = eq / peak - 1.0
+    return float(np.trapz(-np.clip(dd, None, 0)))
+
+
+def _integrated_upside(returns: np.ndarray) -> float:
+    """Area above starting equity — captures resilience + winning streak longevity."""
+    r = np.asarray(returns, dtype=float)
+    if len(r) == 0: return 0.0
+    eq = np.cumprod(1.0 + r)
+    return float(np.trapz(eq - 1.0))
+
+
+def _iudr(returns: np.ndarray) -> float:
+    """IUDR = Integrated Upside / Integrated Drawdown. Shape quality score."""
+    idd = _integrated_drawdown(returns)
+    iup = _integrated_upside(returns)
+    if idd <= 0:
+        return float('inf') if iup > 0 else 0.0
+    return float(iup / idd)
+
+
+def _surefire_ratio(returns: np.ndarray) -> float:
+    """Surefire Ratio = IUDR × final_equity. Master score: shape × magnitude."""
+    r = np.asarray(returns, dtype=float)
+    if len(r) == 0: return 0.0
+    eq = np.cumprod(1.0 + r)
+    final_eq = float(eq[-1])
+    iud = _iudr(r)
+    if not np.isfinite(iud):
+        return float(final_eq * 1000)
+    return float(iud * final_eq)
+
+
+def _max_consec(arr: np.ndarray, positive: bool = True) -> int:
+    best = cur = 0
+    for v in arr:
+        if (v > 0) == positive:
+            cur += 1; best = max(best, cur)
+        else:
+            cur = 0
+    return best
 
 
 def _safe(v):
@@ -134,6 +185,53 @@ def compute_all(
     bd = float(np.sqrt(sum(d**2 for d in depths))) if depths else 1.0
     serenity = float(cagr / (ulcer * ann_vol)) if ulcer > 0 and ann_vol > 0 else 0.0
 
+    # ── Additional metrics (QGSI / template parity) ───────────────────────────
+    # Expected returns
+    exp_annual = float(((1 + exp_mo) ** periods_per_year) - 1)
+
+    # Win rates by period
+    wr_daily = None   # not applicable for monthly data
+    # Quarterly approximation from monthly
+    n_qtrs = max(n // 3, 1)
+    qtr_rets = np.array([
+        float(np.prod(1 + r[i*3:(i+1)*3]) - 1)
+        for i in range(n // 3)
+    ]) if n >= 3 else np.array([])
+    wr_qtr = float((qtr_rets > 0).mean()) if len(qtr_rets) > 0 else None
+
+    # Consecutive wins/losses (on monthly returns)
+    max_consec_wins   = int(_max_consec(r, positive=True))
+    max_consec_losses = int(_max_consec(r, positive=False))
+
+    # Exposure (fraction of periods with non-zero return — for factor model = always 1.0)
+    exposure = float((r != 0).mean())
+
+    # SystemScore = Sharpe × Calmar
+    system_score = float(sharpe * calmar) if calmar != 0 else 0.0
+
+    # Smart Sortino (autocorrelation-adjusted)
+    try:
+        acf1 = float(np.corrcoef(r[:-1], r[1:])[0, 1]) if n > 3 else 0.0
+        smart_sortino_denom = max(1 + 2 * acf1, 0.01) ** 0.5
+        smart_sortino = float(sortino / smart_sortino_denom)
+    except Exception:
+        smart_sortino = sortino
+
+    # OBQ Surefire Suite (strategy-level)
+    integrated_dd  = float(_integrated_drawdown(r))
+    integrated_up  = float(_integrated_upside(r))
+    iudr_val       = float(_iudr(r)) if np.isfinite(_iudr(r)) else None
+    surefire       = float(_surefire_ratio(r))
+
+    # Gain/Pain Ratio (same as Omega but named per QGSI template)
+    gain_pain = float(omega) if np.isfinite(omega) else None
+
+    # MAR Ratio (CAGR / |Max DD|) — same as Calmar but explicit naming
+    mar_ratio = calmar  # alias
+
+    # Duration
+    n_years = float(years)
+
     # Benchmark metrics
     bm_m = {}
     if bm_monthly is not None and bm_equity is not None:
@@ -185,24 +283,43 @@ def compute_all(
 
     result = dict(
         label=label,
-        cagr=cagr, total_return=total_ret, expected_monthly=exp_mo,
-        ann_vol=ann_vol, sharpe=sharpe, smart_sharpe=smart_sr,
-        sortino=sortino, calmar=calmar, omega=omega, serenity=serenity,
+        # Core returns
+        cagr=cagr, total_return=total_ret,
+        expected_monthly=exp_mo, expected_annual=exp_annual,
+        ann_vol=ann_vol, n_years=n_years,
+        # Risk-adjusted
+        sharpe=sharpe, smart_sharpe=smart_sr,
+        sortino=sortino, smart_sortino=smart_sortino,
+        calmar=calmar, omega=omega, serenity=serenity,
         pain_ratio=pain_ratio, recovery_factor=recov_f,
+        mar_ratio=mar_ratio, system_score=system_score,
+        # Risk
         max_dd=max_dd, avg_dd=avg_dd, ulcer_index=ulcer,
         pain_index=pain, lake_ratio=lake,
         var_95=var95, var_99=var99, cvar_95=cvar95, cvar_99=cvar99,
+        # Distribution
         skewness=skew, kurtosis=kurt,
         jarque_bera_stat=float(jb_s), jarque_bera_p=float(jb_p),
         tail_ratio=tail_r,
         best_month=best_mo, worst_month=worst_mo,
         best_year=best_yr, worst_year=worst_yr,
+        # Win/loss
         win_rate_monthly=wr_mo, win_rate_yearly=wr_yr,
+        win_rate_quarterly=wr_qtr,
         avg_up_month=avg_up, avg_down_month=avg_dn, payoff_ratio=payoff,
         profit_factor=pf, common_sense_ratio=common_sense, cpc_index=cpc,
+        gain_pain_ratio=gain_pain,
+        max_consec_wins=max_consec_wins, max_consec_losses=max_consec_losses,
+        exposure=exposure,
+        # Statistical
         k_ratio=k_ratio, psr=psr_val, sharpe_tstat=sr_tstat,
         sharpe_ci_95=[sr_ci_lo, sr_ci_hi],
-        haircut_sharpe=haircut_sharpe, n_periods=n,
+        haircut_sharpe=haircut_sharpe,
+        # OBQ Surefire Suite
+        integrated_dd=integrated_dd, integrated_up=integrated_up,
+        iudr=iudr_val, surefire_ratio=surefire,
+        # Meta
+        n_periods=n,
         **bm_m, **ic_m,
     )
     return {k: _safe(v) for k, v in result.items()}
