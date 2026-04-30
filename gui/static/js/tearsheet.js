@@ -2,15 +2,17 @@
 
 const PLOT_LAYOUT = {
   paper_bgcolor: "#ffffff",
-  plot_bgcolor:  "#ffffff",
+  plot_bgcolor:  "#fafafa",
   font:  { family: "Segoe UI, Arial, sans-serif", size: 10, color: "#374151" },
-  margin: { l: 48, r: 12, t: 10, b: 36 },
-  legend: { orientation: "h", x: 0, y: 1.14, font: { size: 9 }, bgcolor: "transparent" },
-  xaxis: { gridcolor: "#f3f4f6", linecolor: "#e5e7eb", tickfont: { size: 8 }, tickcolor: "#9ca3af" },
-  yaxis: { gridcolor: "#f3f4f6", linecolor: "#e5e7eb", tickfont: { size: 8 }, tickcolor: "#9ca3af", zeroline: true, zerolinecolor: "#e5e7eb" },
+  margin: { l: 52, r: 12, t: 10, b: 36 },
+  legend: { orientation: "h", x: 0, y: 1.14, font: { size: 9, color:"#374151" }, bgcolor: "transparent" },
+  xaxis: { gridcolor: "#eeeeee", linecolor: "#cccccc", tickfont: { size: 8, color:"#374151" }, tickcolor: "#9ca3af", showgrid: true },
+  yaxis: { gridcolor: "#eeeeee", linecolor: "#cccccc", tickfont: { size: 8, color:"#374151" }, tickcolor: "#9ca3af",
+           zeroline: true, zerolinecolor: "#374151", zerolinewidth: 1, autorange: true },
   hovermode: "x unified",
+  autosize: true,
 };
-const PLOT_CFG = { displayModeBar: false, responsive: true };
+const PLOT_CFG = { displayModeBar: false, responsive: true, staticPlot: false };
 
 function _L(extra) { return Object.assign({}, PLOT_LAYOUT, extra || {}); }
 
@@ -102,10 +104,10 @@ function drawRollingVol(divId, dates, equity) {
   });
   const x=dates.slice(1).map(d=>String(d).slice(0,7));
   Plotly.newPlot(divId,[{
-    x, y:rolVol, type:"scatter", mode:"lines", name:"Ann. Volatility %",
-    line:{color:"#7c3aed",width:2}, fill:"tozeroy", fillcolor:"rgba(124,58,237,0.08)",
+    x, y:rolVol, type:"scatter", mode:"lines", name:"Ann. Vol %",
+    line:{color:"#7c3aed",width:2.5}, fill:"tozeroy", fillcolor:"rgba(124,58,237,0.15)",
   }], _L({
-    yaxis:{...PLOT_LAYOUT.yaxis,ticksuffix:"%",title:{text:"Vol %",font:{size:8}}},
+    yaxis:{...PLOT_LAYOUT.yaxis,autorange:true,ticksuffix:"%",title:{text:"Vol %",font:{size:8}}},
     margin:{l:48,r:8,t:8,b:36}
   }), PLOT_CFG);
 }
@@ -120,16 +122,15 @@ function drawRollingSortino(divId, dates, equity) {
     const w=rets.slice(i-W+1,i+1);
     const mu=w.reduce((a,b)=>a+b,0)/W;
     const dn=w.filter(v=>v<0); const ds=dn.length>0?Math.sqrt(dn.reduce((s,v)=>s+v*v,0)/dn.length):0;
-    const v=ds>0?mu/ds*Math.sqrt(12):null;
-    return v!=null?+Math.max(-8,Math.min(15,v)).toFixed(3):null;
+    return ds>0?+Math.min(10, mu/ds*Math.sqrt(12)).toFixed(3):null;
   });
   const x=dates.slice(1).map(d=>String(d).slice(0,7));
   Plotly.newPlot(divId,[
-    { x, y:rs, type:"scatter", mode:"lines", name:"Rolling Sortino",
-      line:{color:"#d97706",width:2}, fill:"tozeroy", fillcolor:"rgba(217,119,6,0.08)" },
+    { x, y:rs, type:"scatter", mode:"lines", name:"Sortino",
+      line:{color:"#b45309",width:2.5}, fill:"tozeroy", fillcolor:"rgba(180,83,9,0.15)" },
     { x:[x[0],x[x.length-1]], y:[0,0], type:"scatter", mode:"lines",
-      line:{color:"#374151",width:0.8,dash:"dot"}, showlegend:false },
-  ], _L({ yaxis:{...PLOT_LAYOUT.yaxis,zeroline:true,zerolinecolor:"#374151",title:{text:"Sortino",font:{size:8}}}, margin:{l:48,r:8,t:8,b:36} }), PLOT_CFG);
+      line:{color:"#6b7280",width:1}, showlegend:false },
+  ], _L({ yaxis:{...PLOT_LAYOUT.yaxis,autorange:true,title:{text:"Sortino",font:{size:8}}}, margin:{l:48,r:8,t:8,b:36} }), PLOT_CFG);
 }
 
 // ── Drawdown table (top N) rendered as HTML ──────────────────────────────────
@@ -284,22 +285,16 @@ function drawRollingCombined(divId, dates, equity) {
     const w=rets.slice(i-W+1,i+1);
     const mu=w.reduce((a,b)=>a+b,0)/W;
     const sd=Math.sqrt(w.reduce((s,v)=>s+(v-mu)**2,0)/W);
-    const sharpe=sd>0?mu/sd*Math.sqrt(12):null;
-    rs.push(sharpe!=null?+Math.max(-5,Math.min(10,sharpe)).toFixed(3):null);
+    rs.push(sd>0?+(mu/sd*Math.sqrt(12)).toFixed(3):null);
     const dn=w.filter(v=>v<0); const ds=dn.length>0?Math.sqrt(dn.reduce((s,v)=>s+v*v,0)/dn.length):0;
-    const sortino=ds>0?mu/ds*Math.sqrt(12):null;
-    // Cap sortino at ±15 to prevent scale explosion
-    rso.push(sortino!=null?+Math.max(-8,Math.min(15,sortino)).toFixed(3):null);
+    rso.push(ds>0?+Math.min(10, mu/ds*Math.sqrt(12)).toFixed(3):null);
   }
   const x=dates.slice(1).map(d=>String(d).slice(0,7));
   Plotly.newPlot(divId,[
-    {x,y:rs, type:"scatter",mode:"lines",name:"Rolling Sharpe", line:{color:"#0066cc",width:2},fill:"tozeroy",fillcolor:"rgba(0,102,204,0.06)"},
-    {x,y:rso,type:"scatter",mode:"lines",name:"Rolling Sortino",line:{color:"#d97706",width:1.5,dash:"dash"}},
-    {x:[x[0],x[x.length-1]],y:[0,0],type:"scatter",mode:"lines",line:{color:"#374151",width:0.8,dash:"dot"},showlegend:false},
-  ],_L({
-    margin:{l:48,r:8,t:8,b:36},
-    yaxis:{...PLOT_LAYOUT.yaxis,title:{text:"Ratio",font:{size:8}},zeroline:true,zerolinecolor:"#374151",zerolinewidth:1},
-  }),PLOT_CFG);
+    {x,y:rs, type:"scatter",mode:"lines",name:"Sharpe", line:{color:"#1d4ed8",width:2.5},fill:"tozeroy",fillcolor:"rgba(29,78,216,0.12)"},
+    {x,y:rso,type:"scatter",mode:"lines",name:"Sortino",line:{color:"#b45309",width:2,dash:"dash"}},
+    {x:[x[0],x[x.length-1]],y:[0,0],type:"scatter",mode:"lines",line:{color:"#6b7280",width:1},showlegend:false},
+  ],_L({margin:{l:48,r:8,t:8,b:36},yaxis:{...PLOT_LAYOUT.yaxis,autorange:true,title:{text:"Ratio",font:{size:8}}}}),PLOT_CFG);
 }
 
 // ── Rolling Max Drawdown ─────────────────────────────────────────────────────
@@ -316,10 +311,11 @@ function drawRollingMaxDD(divId, dates, equity) {
   const x=dates.slice(1).map(d=>String(d).slice(0,7));
   Plotly.newPlot(divId,[
     {x,y:rmdd,type:"scatter",mode:"lines",name:"Rolling Max DD",
-     line:{color:"#dc2626",width:2},fill:"tozeroy",fillcolor:"rgba(220,38,38,0.25)"},
+     line:{color:"#dc2626",width:2.5},fill:"tozeroy",fillcolor:"rgba(220,38,38,0.30)"},
+    {x:[x[0],x[x.length-1]],y:[0,0],type:"scatter",mode:"lines",line:{color:"#6b7280",width:1},showlegend:false},
   ],_L({
     margin:{l:52,r:8,t:8,b:36},
-    yaxis:{...PLOT_LAYOUT.yaxis,ticksuffix:"%",title:{text:"Max DD%",font:{size:8}},
+    yaxis:{...PLOT_LAYOUT.yaxis,autorange:true,ticksuffix:"%",title:{text:"Max DD%",font:{size:8}},
            zeroline:true,zerolinecolor:"#374151",zerolinewidth:1}
   }),PLOT_CFG);
 }

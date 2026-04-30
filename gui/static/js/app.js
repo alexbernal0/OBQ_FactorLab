@@ -630,16 +630,18 @@ function _renderTearsheet(run_id) {
     if (scId) try { drawSectorBar(scId, result.sector_analysis); } catch(e) {}
     if (icId2) try { drawIC(icId2, result.ic_data); } catch(e) {}
 
-    // Force Plotly to resize all charts — fixes invisible lines when container was 0-width at draw time
-    setTimeout(() => {
-      document.querySelectorAll("#ts-content [id^=plt_]").forEach(d => {
-        try { Plotly.Plots.resize(d); } catch(e) {}
-      });
-    }, 600);
+    // Multi-pass resize — force Plotly to recalculate after layout settles
+    [400, 800, 1500].forEach(delay => {
+      setTimeout(() => {
+        document.querySelectorAll("#ts-content [id^=plt_]").forEach(d => {
+          try { if (d.data) Plotly.Plots.resize(d); } catch(e) {}
+        });
+      }, delay);
+    });
   }
 
-  // 200ms — grid layout should be complete by then
-  setTimeout(_drawAll, 200);
+  // 300ms — grid layout should be complete
+  setTimeout(_drawAll, 300);
 }
 
 // ── Image export — renders tearsheet entirely within app using Plotly.toImage ─
