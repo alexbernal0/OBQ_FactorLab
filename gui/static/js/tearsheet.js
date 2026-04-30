@@ -98,13 +98,16 @@ function drawRollingVol(divId, dates, equity) {
     const w=rets.slice(i-W+1,i+1);
     const mu=w.reduce((a,b)=>a+b,0)/W;
     const sd=Math.sqrt(w.reduce((s,v)=>s+(v-mu)**2,0)/W);
-    return +(sd*Math.sqrt(12)*100).toFixed(3);
+    return +(sd*Math.sqrt(12)*100).toFixed(2);
   });
   const x=dates.slice(1).map(d=>String(d).slice(0,7));
   Plotly.newPlot(divId,[{
-    x, y:rolVol, type:"scatter", mode:"lines", name:"Rolling Vol (Ann%)",
-    line:{color:"#7c3aed",width:1.5}, fill:"tozeroy", fillcolor:"rgba(124,58,237,0.06)",
-  }], _L({ yaxis:{...PLOT_LAYOUT.yaxis,ticksuffix:"%"}, margin:{l:44,r:8,t:6,b:36} }), PLOT_CFG);
+    x, y:rolVol, type:"scatter", mode:"lines", name:"Ann. Volatility %",
+    line:{color:"#7c3aed",width:2}, fill:"tozeroy", fillcolor:"rgba(124,58,237,0.08)",
+  }], _L({
+    yaxis:{...PLOT_LAYOUT.yaxis,ticksuffix:"%",title:{text:"Vol %",font:{size:8}}},
+    margin:{l:48,r:8,t:8,b:36}
+  }), PLOT_CFG);
 }
 
 // ── Rolling Sortino ──────────────────────────────────────────────────────────
@@ -117,15 +120,16 @@ function drawRollingSortino(divId, dates, equity) {
     const w=rets.slice(i-W+1,i+1);
     const mu=w.reduce((a,b)=>a+b,0)/W;
     const dn=w.filter(v=>v<0); const ds=dn.length>0?Math.sqrt(dn.reduce((s,v)=>s+v*v,0)/dn.length):0;
-    return ds>0?+(mu/ds*Math.sqrt(12)).toFixed(3):null;
+    const v=ds>0?mu/ds*Math.sqrt(12):null;
+    return v!=null?+Math.max(-8,Math.min(15,v)).toFixed(3):null;
   });
   const x=dates.slice(1).map(d=>String(d).slice(0,7));
   Plotly.newPlot(divId,[
     { x, y:rs, type:"scatter", mode:"lines", name:"Rolling Sortino",
-      line:{color:"#d97706",width:1.5}, fill:"tozeroy", fillcolor:"rgba(217,119,6,0.06)" },
+      line:{color:"#d97706",width:2}, fill:"tozeroy", fillcolor:"rgba(217,119,6,0.08)" },
     { x:[x[0],x[x.length-1]], y:[0,0], type:"scatter", mode:"lines",
-      line:{color:"#9ca3af",width:1,dash:"dot"}, showlegend:false },
-  ], _L({ yaxis:{...PLOT_LAYOUT.yaxis}, margin:{l:44,r:8,t:6,b:36} }), PLOT_CFG);
+      line:{color:"#374151",width:0.8,dash:"dot"}, showlegend:false },
+  ], _L({ yaxis:{...PLOT_LAYOUT.yaxis,zeroline:true,zerolinecolor:"#374151",title:{text:"Sortino",font:{size:8}}}, margin:{l:48,r:8,t:8,b:36} }), PLOT_CFG);
 }
 
 // ── Drawdown table (top N) rendered as HTML ──────────────────────────────────
@@ -280,16 +284,22 @@ function drawRollingCombined(divId, dates, equity) {
     const w=rets.slice(i-W+1,i+1);
     const mu=w.reduce((a,b)=>a+b,0)/W;
     const sd=Math.sqrt(w.reduce((s,v)=>s+(v-mu)**2,0)/W);
-    rs.push(sd>0?+(mu/sd*Math.sqrt(12)).toFixed(3):null);
+    const sharpe=sd>0?mu/sd*Math.sqrt(12):null;
+    rs.push(sharpe!=null?+Math.max(-5,Math.min(10,sharpe)).toFixed(3):null);
     const dn=w.filter(v=>v<0); const ds=dn.length>0?Math.sqrt(dn.reduce((s,v)=>s+v*v,0)/dn.length):0;
-    rso.push(ds>0?+(mu/ds*Math.sqrt(12)).toFixed(3):null);
+    const sortino=ds>0?mu/ds*Math.sqrt(12):null;
+    // Cap sortino at ±15 to prevent scale explosion
+    rso.push(sortino!=null?+Math.max(-8,Math.min(15,sortino)).toFixed(3):null);
   }
   const x=dates.slice(1).map(d=>String(d).slice(0,7));
   Plotly.newPlot(divId,[
-    {x,y:rs, type:"scatter",mode:"lines",name:"Rolling Sharpe", line:{color:"#0066cc",width:1.5}},
-    {x,y:rso,type:"scatter",mode:"lines",name:"Rolling Sortino",line:{color:"#f59e0b",width:1.2,dash:"dash"}},
-    {x:[x[0],x[x.length-1]],y:[0,0],type:"scatter",mode:"lines",line:{color:"#9ca3af",width:1,dash:"dot"},showlegend:false},
-  ],_L({margin:{l:44,r:8,t:6,b:36},yaxis:{...PLOT_LAYOUT.yaxis,title:{text:"Ratio",font:{size:8}}}}),PLOT_CFG);
+    {x,y:rs, type:"scatter",mode:"lines",name:"Rolling Sharpe", line:{color:"#0066cc",width:2},fill:"tozeroy",fillcolor:"rgba(0,102,204,0.06)"},
+    {x,y:rso,type:"scatter",mode:"lines",name:"Rolling Sortino",line:{color:"#d97706",width:1.5,dash:"dash"}},
+    {x:[x[0],x[x.length-1]],y:[0,0],type:"scatter",mode:"lines",line:{color:"#374151",width:0.8,dash:"dot"},showlegend:false},
+  ],_L({
+    margin:{l:48,r:8,t:8,b:36},
+    yaxis:{...PLOT_LAYOUT.yaxis,title:{text:"Ratio",font:{size:8}},zeroline:true,zerolinecolor:"#374151",zerolinewidth:1},
+  }),PLOT_CFG);
 }
 
 // ── Rolling Max Drawdown ─────────────────────────────────────────────────────
@@ -306,8 +316,12 @@ function drawRollingMaxDD(divId, dates, equity) {
   const x=dates.slice(1).map(d=>String(d).slice(0,7));
   Plotly.newPlot(divId,[
     {x,y:rmdd,type:"scatter",mode:"lines",name:"Rolling Max DD",
-     line:{color:"#dc2626",width:1},fill:"tozeroy",fillcolor:"rgba(220,38,38,0.2)"},
-  ],_L({margin:{l:44,r:8,t:6,b:36},yaxis:{...PLOT_LAYOUT.yaxis,ticksuffix:"%",title:{text:"Max DD %",font:{size:8}}}}),PLOT_CFG);
+     line:{color:"#dc2626",width:2},fill:"tozeroy",fillcolor:"rgba(220,38,38,0.25)"},
+  ],_L({
+    margin:{l:52,r:8,t:8,b:36},
+    yaxis:{...PLOT_LAYOUT.yaxis,ticksuffix:"%",title:{text:"Max DD%",font:{size:8}},
+           zeroline:true,zerolinecolor:"#374151",zerolinewidth:1}
+  }),PLOT_CFG);
 }
 
 // ── Omega Ratio Curve ────────────────────────────────────────────────────────

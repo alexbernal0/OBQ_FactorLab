@@ -255,18 +255,24 @@ function renderTable() {
     const tr = document.createElement("div");
     tr.className = `fl-tr ${rowCls} ${isActive ? "active" : ""}`;
     tr.onclick = () => { setActiveRow(run.run_id); showTearsheet(run.run_id); };
-    const icon = isRunning ? "⌛ " : (run.status === "error" ? "✗ " : "✓ ");
+    const icon = isRunning ? "~ " : (run.status === "error" ? "x " : "v ");
+    const sf = m.surefire_ratio;
+    const sfCls = sf!=null?(sf>=10?"g":sf>=1?"":"r"):"";
     tr.innerHTML = `
-      <div class="fl-td dim" style="flex:0 0 80px">${icon}${run.run_label.split(" · ")[0]}</div>
-      <div class="fl-td ${cagr>=0?'g':'r'}" style="flex:0 0 60px">${cagr!=null ? (cagr*100).toFixed(1)+"%" : "—"}</div>
-      <div class="fl-td" style="flex:0 0 55px">${m.sharpe!=null ? (+m.sharpe).toFixed(2) : "—"}</div>
-      <div class="fl-td r" style="flex:0 0 60px">${m.max_dd!=null ? (m.max_dd*100).toFixed(1)+"%" : "—"}</div>
-      <div class="fl-td" style="flex:0 0 55px">${m.calmar!=null ? (+m.calmar).toFixed(2) : "—"}</div>
-      <div class="fl-td" style="flex:0 0 55px">${m.sortino!=null ? (+m.sortino).toFixed(2) : "—"}</div>
-      <div class="fl-td ${(m.alpha||0)>=0?'g':'r'}" style="flex:0 0 55px">${m.alpha!=null ? (m.alpha*100).toFixed(1)+"%" : "—"}</div>
-      <div class="fl-td" style="flex:0 0 55px">${m.info_ratio!=null ? (+m.info_ratio).toFixed(2) : "—"}</div>
-      <div class="fl-td dim" style="flex:0 0 50px">${run.metrics?.elapsed_s!=null ? run.metrics.elapsed_s+"s" : "—"}</div>
-      <div class="fl-td dim" style="flex:1">${run.run_label.split(" · ").slice(1).join(" · ")}</div>
+      <div class="fl-td dim" style="flex:0 0 75px;font-size:10px">${icon}${run.run_label.split(" · ")[0].slice(0,10)}</div>
+      <div class="fl-td ${cagr>=0?'g':'r'}" style="flex:0 0 55px">${cagr!=null?(cagr*100).toFixed(1)+"%":"—"}</div>
+      <div class="fl-td ${m.sharpe>=1?'g':m.sharpe>=0.5?'':''}" style="flex:0 0 50px">${m.sharpe!=null?(+m.sharpe).toFixed(2):"—"}</div>
+      <div class="fl-td r" style="flex:0 0 55px">${m.max_dd!=null?(m.max_dd*100).toFixed(1)+"%":"—"}</div>
+      <div class="fl-td ${(m.win_rate_monthly||0)>=0.55?'g':''}" style="flex:0 0 48px">${m.win_rate_monthly!=null?((m.win_rate_monthly)*100).toFixed(0)+"%":"—"}</div>
+      <div class="fl-td" style="flex:0 0 48px">${m.sortino!=null?(+m.sortino).toFixed(2):"—"}</div>
+      <div class="fl-td" style="flex:0 0 48px">${m.ann_vol!=null?((m.ann_vol)*100).toFixed(1)+"%":"—"}</div>
+      <div class="fl-td" style="flex:0 0 48px">${m.calmar!=null?(+m.calmar).toFixed(2):"—"}</div>
+      <div class="fl-td ${sfCls}" style="flex:0 0 55px">${sf!=null?(+sf).toFixed(1):"—"}</div>
+      <div class="fl-td" style="flex:0 0 48px">${m.omega!=null?(+m.omega).toFixed(2):"—"}</div>
+      <div class="fl-td" style="flex:0 0 45px">${m.lake_ratio!=null?(+m.lake_ratio).toFixed(3):"—"}</div>
+      <div class="fl-td dim" style="flex:0 0 40px">${m.n_periods||run.result?.n_periods||"—"}</div>
+      <div class="fl-td dim" style="flex:0 0 45px">${run.metrics?.elapsed_s!=null?run.metrics.elapsed_s+"s":"—"}</div>
+      <div class="fl-td dim" style="flex:1;font-size:10px">${run.run_label.split(" · ").slice(1).join(" · ")}</div>
     `;
     body.appendChild(tr);
   });
@@ -397,7 +403,7 @@ function _renderTearsheet(run_id) {
   const rRow2 = el("div","ts-charts"); content.appendChild(rRow2);
   const {box:rvBox, id:rvId} = pBox("ROLLING ANNUALIZED VOLATILITY", 180);
   rRow2.appendChild(rvBox);
-  const {box:rsBox, id:rsId} = pBox("ROLLING 12-MO SHARPE (solo)", 180);
+  const {box:rsBox, id:rsId} = pBox("ROLLING 12-MO SORTINO (solo)", 180);
   rRow2.appendChild(rsBox);
 
   // ── 6b. DISTRIBUTION ANALYSIS ──────────────────────────────────────────────
@@ -426,23 +432,28 @@ function _renderTearsheet(run_id) {
   }
 
   // ── 6c. ACTIVE RETURNS + BEST/WORST ───────────────────────────────────────
-  let activeId=null;
-  const bmEq = result.bm_equity || [];
-  if (bmEq.length > 1 && equity.length > 1) {
-    sec("ACTIVE RETURNS & BEST / WORST MONTHS");
-    const aRow = el("div","ts-charts wide"); content.appendChild(aRow);
-    const {box:arBox, id:arId} = pBox("MONTHLY ACTIVE RETURNS (Strategy - Benchmark)", 180, true);
-    aRow.appendChild(arBox); activeId = arId;
+  // Always show Best/Worst months table
+  sec("BEST / WORST MONTHS");
+  const bwWrap = el("div"); bwWrap.style.cssText = "flex-shrink:0";
+  bwWrap.appendChild(buildBestWorstTable(dates, equity, 5));
+  content.appendChild(bwWrap);
 
-    const bwWrap = el("div"); bwWrap.style.cssText = "flex-shrink:0";
-    bwWrap.appendChild(buildBestWorstTable(dates, equity, 5));
-    content.appendChild(bwWrap);
+  // Active returns only if real benchmark differs from strategy
+  let activeId = null;
+  const bmEq = result.bm_equity || [];
+  const hasDiffBenchmark = bmEq.length > 1 && equity.length > 1 &&
+    bmEq[bmEq.length-1] !== equity[equity.length-1];
+  if (hasDiffBenchmark) {
+    sec("MONTHLY ACTIVE RETURNS (Strategy - Benchmark)");
+    const aRow = el("div","ts-charts wide"); content.appendChild(aRow);
+    const {box:arBox, id:arId} = pBox("", 180, true);
+    aRow.appendChild(arBox); activeId = arId;
   }
 
   // ── 6d. CRISIS PERIODS 2x4 GRID ───────────────────────────────────────────
   sec("CRISIS PERIODS ANALYSIS");
   const crisisGrid = el("div");
-  crisisGrid.id = uid();
+  crisisGrid.id = "crisis_grid_" + run_id.replace(/[^a-z0-9]/gi,"_");
   crisisGrid.style.cssText = "display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 12px;flex-shrink:0";
   content.appendChild(crisisGrid);
   const crisisId = crisisGrid.id;
@@ -598,7 +609,7 @@ function _renderTearsheet(run_id) {
     try { drawRollingCombined(rcId, dates, equity); } catch(e) { console.error("rc",e); }
     try { drawRollingMaxDD(rmdId, dates, equity); } catch(e) { console.error("rmd",e); }
     try { drawRollingVol(rvId, dates, equity); } catch(e) { console.error("rv",e); }
-    try { drawRollingSharpe(rsId, dates, equity); } catch(e) { console.error("rs",e); }
+    try { drawRollingSortino(rsId, dates, equity); } catch(e) { console.error("rs_sortino",e); }
     // Distribution analysis
     if (_monthlyRets) {
       if (distId)   try { drawDistribution(distId, _monthlyRets); } catch(e) { console.error("dist",e); }
@@ -617,19 +628,109 @@ function _renderTearsheet(run_id) {
   }, 50);
 }
 
-// ── Image export (hi-res screenshot of tearsheet panel) ──────────────────
+// ── Image export — renders tearsheet entirely within app using Plotly.toImage ─
 async function exportImage(run) {
   const btn = document.querySelector(".btn-pdf[style*='7c3aed']");
   if (btn) { btn.textContent = "..."; btn.disabled = true; }
-  // Use Plotly's toImage on all charts in ts-content + html2canvas fallback via server snap
-  const resp = await fetch("/api/export/image", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ run_label: run.run_label }),
-  }).then(r=>r.json()).catch(e=>({error:String(e)}));
-  if (btn) { btn.textContent = "IMG"; btn.disabled = false; }
-  if (resp.path) showToast("Image saved to Downloads: " + resp.filename, "success");
-  else showToast("Image failed: "+(resp.error||"unknown"), "error");
+
+  try {
+    // 1. Collect all Plotly chart divs in ts-content that have data
+    const tsContent = document.getElementById("ts-content");
+    const plotDivs = Array.from(tsContent.querySelectorAll("[id^='plt_'], [id^='crisis_']"))
+      .filter(d => d.data && d.data.length > 0 && d.offsetHeight > 50);
+
+    // 2. Export each chart to PNG via Plotly.toImage (2x resolution for hi-res)
+    const chartImages = [];
+    for (const div of plotDivs) {
+      try {
+        const imgData = await Plotly.toImage(div, {
+          format: "png", width: div.offsetWidth * 2, height: div.offsetHeight * 2, scale: 2
+        });
+        const title = div.previousElementSibling?.querySelector("h6")?.textContent || div.id;
+        chartImages.push({ title, img: imgData, w: div.offsetWidth, h: div.offsetHeight });
+      } catch(e) { console.warn("toImage failed for", div.id, e); }
+    }
+
+    if (!chartImages.length) {
+      showToast("No charts to export", "error");
+      if (btn) { btn.textContent = "IMG"; btn.disabled = false; }
+      return;
+    }
+
+    // 3. Composite onto a single canvas
+    const PAD = 20, LABEL_H = 18, COLS = 2;
+    const COL_W = 800, CHART_H = 300;
+    const rows = Math.ceil(chartImages.length / COLS);
+    const HEADER_H = 80;
+    const totalW = COL_W * COLS + PAD * (COLS + 1);
+    const totalH = HEADER_H + rows * (CHART_H + LABEL_H + PAD) + PAD;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = totalW; canvas.height = totalH;
+    const ctx = canvas.getContext("2d");
+
+    // Background
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, totalW, totalH);
+
+    // Header
+    ctx.fillStyle = "#0d1b2a"; ctx.fillRect(0, 0, totalW, HEADER_H);
+    ctx.fillStyle = "#c9a84c"; ctx.font = "bold 22px Segoe UI, Arial";
+    ctx.fillText(run.run_label, PAD, 36);
+    ctx.fillStyle = "#8fa3ba"; ctx.font = "13px Segoe UI, Arial";
+    const m = run.metrics || {};
+    ctx.fillText(
+      `CAGR: ${((m.cagr||0)*100).toFixed(1)}%  |  Sharpe: ${(m.sharpe||0).toFixed(2)}  |  Max DD: ${((m.max_dd||0)*100).toFixed(1)}%  |  Win Rate: ${((m.win_rate_monthly||0)*100).toFixed(1)}%`,
+      PAD, 58
+    );
+    ctx.fillText(`Generated: ${new Date().toISOString().slice(0,19)}  |  OBQ Factor Lab`, PAD, 74);
+
+    // Draw each chart image
+    const loadImg = src => new Promise((res, rej) => {
+      const img = new Image(); img.onload = () => res(img); img.onerror = rej;
+      img.src = src;
+    });
+
+    for (let i = 0; i < chartImages.length; i++) {
+      const col = i % COLS, row = Math.floor(i / COLS);
+      const x = PAD + col * (COL_W + PAD);
+      const y = HEADER_H + PAD + row * (CHART_H + LABEL_H + PAD);
+
+      // Label
+      ctx.fillStyle = "#374151"; ctx.font = "bold 11px Segoe UI, Arial";
+      ctx.fillText(chartImages[i].title, x, y + LABEL_H - 4);
+
+      // Chart image
+      try {
+        const img = await loadImg(chartImages[i].img);
+        ctx.drawImage(img, x, y + LABEL_H, COL_W, CHART_H);
+      } catch(e) {}
+
+      // Border
+      ctx.strokeStyle = "#e5e7eb"; ctx.lineWidth = 1;
+      ctx.strokeRect(x, y + LABEL_H, COL_W, CHART_H);
+    }
+
+    // 4. Get PNG blob and POST to server for saving to Downloads
+    canvas.toBlob(async (blob) => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const b64 = reader.result.split(",")[1];
+        const resp = await fetch("/api/export/image_data", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ run_label: run.run_label, image_b64: b64 }),
+        }).then(r=>r.json()).catch(e=>({error:String(e)}));
+        if (btn) { btn.textContent = "IMG"; btn.disabled = false; }
+        if (resp.path) showToast("Image saved: " + resp.filename, "success");
+        else showToast("Image failed: "+(resp.error||"unknown"), "error");
+      };
+      reader.readAsDataURL(blob);
+    }, "image/png");
+
+  } catch(e) {
+    if (btn) { btn.textContent = "IMG"; btn.disabled = false; }
+    showToast("Image error: " + e.message, "error");
+  }
 }
 
 // ── CSV export ────────────────────────────────────────────────────────────

@@ -251,10 +251,20 @@ def evaljs():
 
 @app.route("/api/export/image", methods=["POST"])
 def export_image():
-    """Capture the tearsheet panel as a hi-res PNG using PIL screenshot, crop to ts-panel."""
-    import datetime as _dt, pathlib as _pl, base64 as _b64, io as _io
+    """Legacy endpoint — kept for compatibility. Use /api/export/image_data instead."""
+    return jsonify({"error": "Use IMG button in the app — it renders charts directly from Plotly"}), 400
+
+
+@app.route("/api/export/image_data", methods=["POST"])
+def export_image_data():
+    """Receive pre-rendered PNG base64 from JS canvas compositing and save to Downloads."""
+    import datetime as _dt, pathlib as _pl, base64 as _b64
     data = request.get_json(force=True) or {}
-    run_label = data.get("run_label", "tearsheet")
+    run_label  = data.get("run_label", "tearsheet")
+    image_b64  = data.get("image_b64", "")
+
+    if not image_b64:
+        return jsonify({"error": "No image data received"}), 400
 
     ts   = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in run_label)[:40]
@@ -262,47 +272,10 @@ def export_image():
     path  = _pl.Path.home() / "Downloads" / fname
 
     try:
-        import PIL.ImageGrab
-        # Take full screenshot
-        img = PIL.ImageGrab.grab()
-
-        # Try to get ts-panel bounds via evaljs
-        win = getattr(__import__('__main__'), '_webview_window', None)
-        cropped = img
-        if win:
-            try:
-                bounds_js = """(function(){
-                  var p = document.getElementById('ts-panel');
-                  if (!p) return null;
-                  var r = p.getBoundingClientRect();
-                  return JSON.stringify({x:Math.round(r.left),y:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height)});
-                })()"""
-                result = win.evaluate_js(bounds_js)
-                import json as _json
-                if result:
-                    b = _json.loads(result)
-                    # Get window position to offset
-                    import ctypes
-                    user32 = ctypes.windll.user32
-                    # Scale factor
-                    scale = img.width / user32.GetSystemMetrics(0)
-                    # Find the window — use webview window handle
-                    # Crop: add window chrome offset (~30px top for title bar)
-                    chrome_top = 30
-                    left  = int(b['x'] * scale)
-                    top   = int((b['y'] + chrome_top) * scale)
-                    right = int((b['x'] + b['w']) * scale)
-                    bot   = int((b['y'] + b['h'] + chrome_top) * scale)
-                    if right > left and bot > top:
-                        cropped = img.crop((left, top, right, bot))
-            except Exception:
-                pass  # fallback to full screenshot
-
-        # Save at full resolution (no downscaling — hi-res)
-        cropped.save(str(path), "PNG", optimize=False)
+        img_bytes = _b64.b64decode(image_b64)
+        path.write_bytes(img_bytes)
         return jsonify({"path": str(path), "filename": fname})
     except Exception as e:
-        import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -354,7 +327,7 @@ def export_csv():
 
 @app.route("/api/export/pdf", methods=["POST"])
 def export_pdf_report():
-    """Export tearsheet as PDF to Downloads folder using matplotlib."""
+    """Export comprehensive tearsheet PDF to Downloads — equity chart + full metrics table."""
     import datetime as _dt, pathlib as _pl, math as _math
     data = request.get_json(force=True) or {}
     run_label = data.get("run_label", "backtest")
@@ -365,6 +338,46 @@ def export_pdf_report():
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in run_label)[:40]
     fname = f"OBQ_FactorLab_{safe}_{ts}.pdf"
     path  = _pl.Path.home() / "Downloads" / fname
+
+    PCT_KEYS = {"cagr","total_return","expected_monthly","expected_annual","ann_vol",
+                "max_dd","avg_dd","var_95","var_99","cvar_95","cvar_99",
+                "win_rate_monthly","win_rate_yearly","win_rate_quarterly",
+                "avg_up_month","avg_down_month","best_month","worst_month",
+                "best_year","worst_year","exposure","alpha","tracking_error",
+                "up_capture","down_capture","m_squared","psr","gain_pain_ratio",
+                "lake_ratio","mar_ratio"}
+
+    def _fmt(k, v):
+        if v is None: return "—"
+        if isinstance(v, list): return str([round(x,3) if isinstance(x,float) else x for x in v])
+        try:
+            f = float(v)
+            if _math.isnan(f) or _math.isinf(f): return "—"
+            if k in PCT_KEYS: return f"{f*100:+.2f}%" if f < 0 or k in {"cagr","total_return","expected_monthly","expected_annual","alpha"} else f"{f*100:.2f}%"
+            if isinstance(v, bool): return str(v)
+            if abs(f) > 999: return f"{f:,.0f}"
+            return f"{f:.4f}"
+        except Exception:
+            return str(v)
+
+    SECTIONS = [
+        ("PERIOD", ["n_years","n_periods"]),
+        ("RETURNS", ["cagr","total_return","expected_monthly","expected_annual","ann_vol"]),
+        ("RISK-ADJUSTED", ["sharpe","smart_sharpe","sortino","smart_sortino","calmar",
+                           "omega","gain_pain_ratio","serenity","pain_ratio",
+                           "recovery_factor","mar_ratio","system_score","k_ratio","psr"]),
+        ("OBQ SUREFIRE SUITE", ["iudr","surefire_ratio","integrated_dd","integrated_up"]),
+        ("RISK", ["max_dd","avg_dd","ulcer_index","pain_index","lake_ratio",
+                  "var_95","var_99","cvar_95","cvar_99"]),
+        ("DISTRIBUTION", ["skewness","kurtosis","tail_ratio","best_month","worst_month",
+                          "best_year","worst_year"]),
+        ("WIN / LOSS", ["win_rate_monthly","win_rate_quarterly","win_rate_yearly",
+                        "avg_up_month","avg_down_month","payoff_ratio","profit_factor",
+                        "common_sense_ratio","cpc_index","max_consec_wins","max_consec_losses","exposure"]),
+        ("STATISTICAL", ["sharpe_tstat","haircut_sharpe","sharpe_ci_95","jarque_bera_p"]),
+        ("VS BENCHMARK", ["alpha","beta","info_ratio","tracking_error","r_squared",
+                          "up_capture","down_capture","treynor_ratio","m_squared"]),
+    ]
 
     try:
         import matplotlib
@@ -377,64 +390,132 @@ def export_pdf_report():
         equity = result.get("portfolio_equity", [])
         dates  = result.get("equity_dates", [])
 
-        def _fmt(v, pct=False):
-            if v is None: return "—"
-            try:
-                f = float(v)
-                if _math.isnan(f) or _math.isinf(f): return "—"
-                if pct: return f"{f*100:.2f}%"
-                return f"{f:.4f}"
-            except Exception:
-                return str(v)
-
         with PdfPages(str(path)) as pdf:
-            # Page 1 — Equity + Drawdown + KPIs
+            # ── PAGE 1: Header + KPIs + Equity + Drawdown ─────────────────
             fig = plt.figure(figsize=(11, 8.5))
             fig.patch.set_facecolor("white")
-            plt.suptitle(f"{run_label}\nOBQ Factor Lab Tearsheet — {result.get('start_date','')} to {result.get('end_date','')}",
-                         fontsize=12, fontweight="bold", y=0.98)
 
-            gs = gridspec.GridSpec(3, 1, figure=fig, top=0.92, bottom=0.06, hspace=0.35)
+            # Dark header band
+            ax_h = fig.add_axes([0, 0.93, 1, 0.07])
+            ax_h.axis("off"); ax_h.set_facecolor("#0d1b2a")
+            ax_h.add_patch(plt.Rectangle((0,0),1,1,transform=ax_h.transAxes,facecolor="#0d1b2a"))
+            ax_h.text(0.02, 0.62, run_label, transform=ax_h.transAxes,
+                      fontsize=13, fontweight="bold", color="#c9a84c", va="center")
+            ax_h.text(0.02, 0.22, f"OBQ Factor Lab  |  {result.get('start_date','')} — {result.get('end_date','')}  |  {result.get('n_periods','')} periods",
+                      transform=ax_h.transAxes, fontsize=8, color="#8fa3ba", va="center")
 
+            # KPI boxes
+            kpis = [
+                ("CAGR",     f"{(metrics.get('cagr',0) or 0)*100:+.1f}%", "#2e7d32"),
+                ("SHARPE",   f"{metrics.get('sharpe',0) or 0:.2f}",       "#1565c0"),
+                ("MAX DD",   f"{(metrics.get('max_dd',0) or 0)*100:.1f}%","#c62828"),
+                ("SORTINO",  f"{metrics.get('sortino',0) or 0:.2f}",      "#1565c0"),
+                ("CALMAR",   f"{metrics.get('calmar',0) or 0:.2f}",       "#1565c0"),
+                ("WIN RATE", f"{(metrics.get('win_rate_monthly',0) or 0)*100:.1f}%","#2e7d32"),
+                ("SUREFIRE", f"{metrics.get('surefire_ratio',0) or 0:.1f}","#7b1fa2"),
+                ("IUDR",     f"{metrics.get('iudr',0) or 0:.1f}",         "#7b1fa2"),
+            ]
+            n_kpi = len(kpis)
+            for i, (lbl, val, col) in enumerate(kpis):
+                x = 0.01 + i * (0.98/n_kpi)
+                w = 0.97/n_kpi - 0.005
+                ax_k = fig.add_axes([x, 0.86, w, 0.065])
+                ax_k.axis("off")
+                ax_k.add_patch(plt.Rectangle((0,0),1,1,transform=ax_k.transAxes,
+                                              facecolor=col, alpha=0.88, linewidth=0))
+                ax_k.text(0.5, 0.72, lbl, transform=ax_k.transAxes,
+                          fontsize=5.5, fontweight="bold", color="#c9a84c", ha="center", va="center")
+                ax_k.text(0.5, 0.28, val, transform=ax_k.transAxes,
+                          fontsize=10, fontweight="bold", color="white", ha="center", va="center")
+
+            # Equity curve
             if equity and dates:
-                ax1 = fig.add_subplot(gs[0:2])
-                ax1.plot(dates, equity, color="#0066cc", lw=1.2, label="Portfolio")
-                ax1.fill_between(dates, equity, 1.0, alpha=0.07, color="#0066cc")
-                ax1.set_ylabel("Growth (×)"); ax1.set_title("Cumulative Equity"); ax1.grid(True, alpha=0.3)
-                ax1.tick_params(axis='x', labelsize=7)
+                ax1 = fig.add_axes([0.07, 0.48, 0.90, 0.36])
+                ax1.plot(range(len(dates)), equity, color="#0066cc", lw=1.3, label="Portfolio")
+                ax1.fill_between(range(len(dates)), equity, 1.0, alpha=0.07, color="#0066cc")
+                ax1.axhline(1.0, color="#9ca3af", lw=0.7, linestyle="--")
+                step = max(1, len(dates)//8)
+                ax1.set_xticks(range(0, len(dates), step))
+                ax1.set_xticklabels([str(dates[i])[:7] for i in range(0, len(dates), step)], fontsize=6, rotation=30)
+                ax1.set_ylabel("Growth (×)", fontsize=8); ax1.grid(True, alpha=0.25)
+                ax1.set_title("Equity Curve", fontsize=9, fontweight="bold", loc="left")
+                ax1.legend(fontsize=7, loc="upper left")
 
-                ax2 = fig.add_subplot(gs[2])
+                # Drawdown
+                ax2 = fig.add_axes([0.07, 0.10, 0.90, 0.35])
                 eq_arr = np.array(equity, dtype=float)
                 peak = np.maximum.accumulate(eq_arr)
                 dd = (eq_arr / peak - 1) * 100
-                ax2.fill_between(dates, dd, 0, color="#dc2626", alpha=0.4, label="Drawdown")
-                ax2.set_ylabel("DD%"); ax2.set_title("Drawdown"); ax2.grid(True, alpha=0.3)
-                ax2.tick_params(axis='x', labelsize=7)
+                ax2.fill_between(range(len(dates)), dd, 0, color="#dc2626", alpha=0.45, label="Strategy DD")
+                ax2.plot(range(len(dates)), dd, color="#dc2626", lw=0.8)
+                ax2.axhline(0, color="#374151", lw=0.6)
+                ax2.set_xticks(range(0, len(dates), step))
+                ax2.set_xticklabels([str(dates[i])[:7] for i in range(0, len(dates), step)], fontsize=6, rotation=30)
+                ax2.set_ylabel("Drawdown (%)", fontsize=8); ax2.grid(True, alpha=0.25)
+                ax2.set_title("Drawdown Underwater", fontsize=9, fontweight="bold", loc="left")
+                ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.0f}%"))
 
             pdf.savefig(fig, bbox_inches="tight")
             plt.close(fig)
 
-            # Page 2 — Metrics table
-            pct_keys = {"cagr","total_return","expected_monthly","expected_annual","ann_vol",
-                        "max_dd","avg_dd","var_95","var_99","cvar_95","cvar_99",
-                        "win_rate_monthly","win_rate_yearly","win_rate_quarterly",
-                        "avg_up_month","avg_down_month","best_month","worst_month",
-                        "best_year","worst_year","exposure","alpha","tracking_error",
-                        "up_capture","down_capture","m_squared","psr"}
-            fig2, ax = plt.subplots(figsize=(11, 8.5))
-            fig2.patch.set_facecolor("white"); ax.axis("off")
-            plt.title(f"{run_label} — Performance Metrics", fontsize=11, fontweight="bold")
-            rows = [["Metric", "Value"]]
-            for k, v in sorted(metrics.items()):
-                is_pct = k in pct_keys
-                rows.append([k.replace("_"," ").title(), _fmt(v, is_pct)])
-            tbl = ax.table(cellText=rows[1:], colLabels=rows[0], loc="center",
-                           cellLoc="left", colWidths=[0.55, 0.35])
-            tbl.auto_set_font_size(False); tbl.set_fontsize(7.5)
-            tbl.scale(1, 1.2)
-            for (r,c), cell in tbl.get_celld().items():
-                if r == 0: cell.set_facecolor("#1e3a5f"); cell.set_text_props(color="white", fontweight="bold")
-                elif r % 2 == 0: cell.set_facecolor("#f8f9fa")
+            # ── PAGE 2: Complete Metrics Table ─────────────────────────────
+            fig2 = plt.figure(figsize=(11, 8.5))
+            fig2.patch.set_facecolor("white")
+
+            # Header
+            ax_h2 = fig2.add_axes([0, 0.96, 1, 0.04])
+            ax_h2.axis("off")
+            ax_h2.add_patch(plt.Rectangle((0,0),1,1,transform=ax_h2.transAxes,facecolor="#0d1b2a"))
+            ax_h2.text(0.02, 0.5, f"{run_label}  |  PERFORMANCE METRICS",
+                       transform=ax_h2.transAxes, fontsize=10, fontweight="bold",
+                       color="#c9a84c", va="center")
+
+            ax2m = fig2.add_axes([0.02, 0.01, 0.96, 0.94])
+            ax2m.axis("off")
+
+            # Build two-column layout of all metrics
+            C_DARK, C_GOLD, C_GREEN, C_RED, C_PURPLE = "#0d1b2a","#c9a84c","#2e7d32","#c62828","#6a1b9a"
+            C_LGREY = "#f8f9fa"
+
+            all_rows = []
+            for sec_name, keys in SECTIONS:
+                all_rows.append(("__SEC__", sec_name))
+                for k in keys:
+                    v = metrics.get(k)
+                    all_rows.append((k.replace("_"," ").title(), _fmt(k, v)))
+
+            n_rows = len(all_rows)
+            row_h = min(0.96 / n_rows, 0.032)
+            y = 0.98
+
+            for lbl, val in all_rows:
+                if lbl == "__SEC__":
+                    ax2m.add_patch(plt.Rectangle((0, y - row_h), 1, row_h,
+                                                  transform=ax2m.transAxes,
+                                                  facecolor=C_DARK, zorder=0))
+                    ax2m.text(0.01, y - row_h/2, val.upper(),
+                              transform=ax2m.transAxes, fontsize=7.5, fontweight="bold",
+                              color=C_GOLD, va="center")
+                else:
+                    bg = C_LGREY if (all_rows.index((lbl,val)) % 2 == 0) else "white"
+                    ax2m.add_patch(plt.Rectangle((0, y - row_h), 1, row_h,
+                                                  transform=ax2m.transAxes,
+                                                  facecolor=bg, zorder=0))
+                    ax2m.text(0.01, y - row_h/2, lbl,
+                              transform=ax2m.transAxes, fontsize=7, color=C_DARK, va="center")
+                    # Color value
+                    try:
+                        fv = float(val.replace("%","").replace("+",""))
+                        vc = C_RED if fv < 0 else (C_GREEN if fv > 0 else C_DARK)
+                    except Exception:
+                        vc = C_DARK
+                    if any(k in lbl.lower() for k in ["iudr","surefire"]):
+                        vc = C_PURPLE
+                    ax2m.text(0.55, y - row_h/2, val,
+                              transform=ax2m.transAxes, fontsize=7, fontweight="bold",
+                              color=vc, va="center")
+                y -= row_h
+
             pdf.savefig(fig2, bbox_inches="tight")
             plt.close(fig2)
 
