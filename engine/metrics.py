@@ -243,9 +243,15 @@ def compute_all(
     burke_ratio = float(cagr / _bd_standalone) if _bd_standalone > 0 else 0.0
 
     # Sterling Ratio = CAGR / (avg annual max DD + 10%)
-    if years >= 1:
-        _ann_mdd = np.array([dd[i*12:(i+1)*12].min() for i in range(int(years))])
-        sterling_ratio = float(cagr / (abs(_ann_mdd.mean()) + 0.10)) if _ann_mdd.mean() != 0 else 0.0
+    _periods_per_yr = int(round(periods_per_year))  # e.g. 12 monthly, 2 semi-annual
+    if years >= 1 and _periods_per_yr > 0:
+        n_full_yrs = max(1, int(years))
+        _ann_mdd = np.array([
+            dd[i*_periods_per_yr:(i+1)*_periods_per_yr].min()
+            for i in range(n_full_yrs)
+            if len(dd[i*_periods_per_yr:(i+1)*_periods_per_yr]) > 0
+        ])
+        sterling_ratio = float(cagr / (abs(_ann_mdd.mean()) + 0.10)) if len(_ann_mdd) > 0 and _ann_mdd.mean() != 0 else 0.0
     else:
         sterling_ratio = float(cagr / (abs(max_dd) + 0.10)) if max_dd != 0 else 0.0
 

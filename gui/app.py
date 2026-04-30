@@ -542,5 +542,204 @@ def snap():
         return jsonify({"error": str(e)}), 500
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# FACTOR BACKTEST API  —  /api/factor/*
+# All routes prefixed /api/factor/ to avoid any conflict with existing routes
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# In-memory store of factor backtest runs (keyed by run_id)
+_factor_runs: dict = {}
+_factor_lock = threading.Lock()
+
+
+@app.route("/api/factor/scores")
+def factor_scores():
+    """Return all available score columns with metadata."""
+    try:
+        from engine.factor_backtest import get_available_scores
+        scores = get_available_scores()
+        return jsonify({"scores": scores})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/factor/score_range")
+def factor_score_range():
+    """Return date range and symbol count for a given score column."""
+    score_col = request.args.get("score", "jcn_full_composite")
+    try:
+        from engine.factor_backtest import get_score_date_range
+        return jsonify(get_score_date_range(score_col))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/factor/run", methods=["POST"])
+def factor_run():
+    """Launch a factor backtest in background. Returns run_id immediately."""
+    data = request.get_json(force=True) or {}
+    run_id = "fac-" + str(uuid.uuid4())[:8]
+
+    try:
+        from engine.factor_backtest import FactorBacktestConfig, run_factor_backtest
+
+        cfg = FactorBacktestConfig(
+            score_column     = data.get("score_column",     "jcn_full_composite"),
+            score_direction  = data.get("score_direction",  "higher_better"),
+            n_buckets        = int(data.get("n_buckets",    5)),
+            start_date       = data.get("start_date",       "2005-01-31"),
+            end_date         = data.get("end_date",         "2024-12-31"),
+            hold_months      = int(data.get("hold_months",  6)),
+            min_price        = float(data.get("min_price",  5.0)),
+            max_price        = float(data.get("max_price",  10000.0)),
+            min_adv_usd      = float(data.get("min_adv_usd", 1_000_000)),
+            cap_tier         = data.get("cap_tier",         "all"),
+            exclude_sectors  = data.get("exclude_sectors",  []),
+            rebalance_freq   = data.get("rebalance_freq",   "semi-annual"),
+            transaction_cost_bps = float(data.get("cost_bps", 15.0)),
+            run_label        = data.get("run_label",        ""),
+        )
+        if not cfg.run_label:
+            cfg.run_label = f"{cfg.score_column} | {cfg.n_buckets}Q | {cfg.hold_months}mo | {cfg.cap_tier}"
+
+        log_q: queue.Queue = queue.Queue(maxsize=200)
+        with _factor_lock:
+            _factor_runs[run_id] = {"status": "running", "result": None, "log_q": log_q, "cfg": data}
+
+        def _cb(level, msg):
+            try: log_q.put_nowait({"level": level, "msg": msg, "ts": time.time()})
+            except: pass
+
+        def _worker():
+            try:
+                result = run_factor_backtest(cfg, cb=_cb)
+                with _factor_lock:
+                    _factor_runs[run_id]["result"] = result
+                    _factor_runs[run_id]["status"] = "complete" if result.get("status") != "error" else "error"
+
+                # ── Auto-save to strategy bank ─────────────────────────────
+                if result.get("status") == "complete":
+                    try:
+                        from engine.strategy_bank import save_factor_model
+                        sid = save_factor_model(result, overwrite=True)
+                        with _factor_lock:
+                            _factor_runs[run_id]["strategy_id"] = sid
+                        _cb("ok", f"Saved to bank: {sid}  |  elapsed: {result.get('elapsed_s')}s")
+                    except Exception as save_err:
+                        _cb("ok", f"Done {result.get('elapsed_s')}s (bank save failed: {save_err})")
+                else:
+                    _cb("ok", f"Done — {result.get('elapsed_s')}s")
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                _cb("error", str(e))
+                with _factor_lock:
+                    _factor_runs[run_id]["status"] = "error"
+                    _factor_runs[run_id]["result"] = {"status": "error", "error": str(e)}
+
+        threading.Thread(target=_worker, name=f"factor-{run_id}", daemon=True).start()
+        return jsonify({"run_id": run_id, "status": "running"})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/factor/status/<run_id>")
+def factor_status(run_id):
+    info = _factor_runs.get(run_id)
+    if not info:
+        return jsonify({"error": "unknown run"}), 404
+    return jsonify({"run_id": run_id, "status": info["status"],
+                    "has_result": info["result"] is not None})
+
+
+@app.route("/api/factor/stream/<run_id>")
+def factor_stream(run_id):
+    """SSE log stream for a running factor backtest."""
+    def gen():
+        info = _factor_runs.get(run_id)
+        if not info:
+            yield "data: {\"error\":\"unknown run\"}\n\n"; return
+        q = info["log_q"]
+        yield f"data: {json.dumps({'level':'info','msg':'stream open'})}\n\n"
+        while True:
+            try:
+                entry = q.get(timeout=15)
+                yield f"data: {json.dumps(entry)}\n\n"
+                if info.get("status") in ("complete","error") and q.empty():
+                    break
+            except queue.Empty:
+                yield ": heartbeat\n\n"
+                if info.get("status") in ("complete","error"):
+                    break
+    return Response(stream_with_context(gen()), mimetype="text/event-stream",
+                    headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+
+
+@app.route("/api/factor/result/<run_id>")
+def factor_result(run_id):
+    info = _factor_runs.get(run_id)
+    if not info:
+        return jsonify({"error": "unknown run"}), 404
+    if info["status"] == "running":
+        return jsonify({"status": "running"}), 202
+    result = info["result"] or {}
+
+    # Attach strategy_id if saved
+    if info.get("strategy_id"):
+        result = dict(result, strategy_id=info["strategy_id"])
+
+    # Clean NaN/Inf before JSON serialization
+    def _clean(obj):
+        if isinstance(obj, dict): return {k: _clean(v) for k, v in obj.items()}
+        if isinstance(obj, list): return [_clean(v) for v in obj]
+        if isinstance(obj, float):
+            if math.isnan(obj) or math.isinf(obj): return None
+            return obj
+        return obj
+    return jsonify(_clean(result))
+
+
+@app.route("/api/factor/bank")
+def factor_bank():
+    """Return all saved factor models from the strategy bank."""
+    try:
+        from engine.strategy_bank import get_all_models, get_bank_summary
+        models = get_all_models(limit=500)
+        summary = get_bank_summary()
+        # Clean NaN
+        import math as _math
+        def _c(v):
+            if isinstance(v, float) and (_math.isnan(v) or _math.isinf(v)): return None
+            return v
+        models = [{k: _c(v) for k, v in m.items()} for m in models]
+        return jsonify({"models": models, "summary": summary})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/factor/bank/<strategy_id>")
+def factor_bank_model(strategy_id):
+    """Return full model from bank by strategy_id."""
+    try:
+        from engine.strategy_bank import get_model
+        m = get_model(strategy_id)
+        if not m: return jsonify({"error": "not found"}), 404
+        return jsonify(m)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/factor/bank/<strategy_id>/notes", methods=["POST"])
+def factor_bank_notes(strategy_id):
+    """Update notes/tags for a model."""
+    data = request.get_json(force=True) or {}
+    try:
+        from engine.strategy_bank import update_model_notes
+        ok = update_model_notes(strategy_id, data.get("notes",""), data.get("tags",""))
+        return jsonify({"ok": ok})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5744, debug=False, use_reloader=False, threaded=True)
