@@ -93,18 +93,25 @@ def compute_all(
     ann_vol = float(r.std() * np.sqrt(periods_per_year))
     exp_mo = float(r.mean())
 
-    # Risk-adjusted
-    excess = r - rf
-    sharpe = float(excess.mean() / excess.std() * np.sqrt(periods_per_year)) if excess.std() > 0 else 0.0
+    # ── GIPS-compliant risk-adjusted metrics ─────────────────────────────────
+    # Sharpe: (CAGR - rf_annual) / ann_vol  [GIPS standard — geometric return]
+    # NOT arithmetic mean × ppy, which overstates in compounding regimes.
+    sharpe = float((cagr - rf_annual) / ann_vol) if ann_vol > 0 else 0.0
 
-    # Smart Sharpe (accounts for autocorrelation via sqrt Sharpe)
+    # Smart Sharpe (autocorrelation-adjusted Sharpe)
     sharpe_sq = sharpe ** 2
     smart_sr = float(sharpe / np.sqrt(1 + (sharpe_sq / (4 * n)))) if n > 0 else 0.0
 
-    # Sortino
-    down = r[r < rf] - rf
-    down_std = float(np.sqrt((down**2).mean())) if len(down) > 0 else 1e-9
-    sortino = float((r.mean() - rf) / down_std * np.sqrt(periods_per_year)) if down_std > 0 else 0.0
+    # Sortino: (CAGR - rf_annual) / downside_deviation  [GIPS/CFA standard]
+    # Downside deviation = std of returns BELOW MAR (not RMS — RMS is incorrect)
+    neg_r = r[r < rf]
+    if len(neg_r) >= 2:
+        down_std = float(neg_r.std() * np.sqrt(periods_per_year))
+    elif len(neg_r) == 1:
+        down_std = float(abs(neg_r[0]) * np.sqrt(periods_per_year))
+    else:
+        down_std = 1e-9
+    sortino = float((cagr - rf_annual) / down_std) if down_std > 0 else 0.0
 
     # Drawdown
     roll_max = np.maximum.accumulate(eq)
@@ -112,8 +119,17 @@ def compute_all(
     max_dd = float(dd.min())
     avg_dd = float(dd[dd < 0].mean()) if (dd < 0).any() else 0.0
 
-    # Calmar, Omega
-    calmar = float(cagr / abs(max_dd)) if max_dd != 0 else 0.0
+    # Win rates (computed early — used in Calmar below)
+    wr_mo = float((r > 0).mean())
+    ann_r = annual_ret if annual_ret is not None else np.array([])
+    wr_yr = float((ann_r > 0).mean()) if len(ann_r) > 0 else None
+
+    # Calmar — OBQ definition: CAGR × WinMonth% / |MaxDD|
+    # Rewards return AND consistency of up-months, penalizes drawdown depth
+    calmar = float((cagr * wr_mo) / abs(max_dd)) if max_dd != 0 else 0.0
+    # GIPS standard Calmar: CAGR / |MaxDD| (no win-rate multiplier)
+    calmar_gips = float(cagr / abs(max_dd)) if max_dd != 0 else 0.0
+
     thresh = rf
     gains = r[r >= thresh] - thresh
     losses = thresh - r[r < thresh]
@@ -129,11 +145,6 @@ def compute_all(
     skew = float(stats.skew(r))
     kurt = float(stats.kurtosis(r))
     jb_s, jb_p = stats.jarque_bera(r)
-
-    # Win rates
-    wr_mo = float((r > 0).mean())
-    ann_r = annual_ret if annual_ret is not None else np.array([])
-    wr_yr = float((ann_r > 0).mean()) if len(ann_r) > 0 else None
 
     # Pain / Ulcer
     ulcer = float(np.sqrt((dd**2).mean()))
@@ -379,7 +390,10 @@ def compute_all(
         treynor = float((cagr - rf_annual) / beta) if beta != 0 else 0.0
         m2 = float(sharpe * bm_vol + rf_annual)
         burke = float(cagr / bd) if bd > 0 else 0.0
-        ann_mdd = np.array([dd[i*12:(i+1)*12].min() for i in range(int(years))]) if years >= 1 else np.array([max_dd])
+        _ppy_int = max(1, int(round(periods_per_year)))
+        _ann_mdd_slices = [dd[i*_ppy_int:(i+1)*_ppy_int] for i in range(int(years))]
+        _ann_mdd_slices = [s for s in _ann_mdd_slices if len(s) > 0]
+        ann_mdd = np.array([s.min() for s in _ann_mdd_slices]) if _ann_mdd_slices else np.array([max_dd])
         sterling = float(cagr / (abs(ann_mdd.mean()) + 0.10)) if ann_mdd.mean() != 0 else 0.0
         bm_m = dict(
             bm_cagr=bm_cagr, bm_vol=bm_vol,
@@ -387,7 +401,7 @@ def compute_all(
             tracking_error=te, info_ratio=ir,
             up_capture=uc, down_capture=dc,
             treynor_ratio=treynor, m_squared=m2,
-            burke_ratio=burke, sterling_ratio=sterling,
+            bm_burke_ratio=burke, bm_sterling_ratio=sterling,
         )
 
     # IC metrics
@@ -419,7 +433,7 @@ def compute_all(
         # Risk-adjusted
         sharpe=sharpe, smart_sharpe=smart_sr,
         sortino=sortino, smart_sortino=smart_sortino,
-        calmar=calmar, omega=omega, serenity=serenity,
+        calmar=calmar, calmar_gips=calmar_gips, omega=omega, serenity=serenity,
         pain_ratio=pain_ratio, recovery_factor=recov_f,
         mar_ratio=mar_ratio, system_score=system_score,
         # Risk

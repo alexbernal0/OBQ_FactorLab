@@ -195,11 +195,60 @@ async function startSPY() {
   pollPreloaded();
 }
 
+// ── Generic benchmark loader (QQQ, MDY, IWM) ─────────────────────────────
+const _benchmarkLoaded = {};
+
+window.startBenchmark = async function(symbol, label) {
+  const run_id = symbol.toLowerCase() + "-benchmark";
+  if (_benchmarkLoaded[run_id]) {
+    // Already loaded — just select it
+    setActiveRow(run_id);
+    showTearsheet(run_id);
+    return;
+  }
+
+  setStatus(`Loading ${label} (${symbol}) benchmark...`);
+  setProgress(15);
+
+  // Get date range from current config
+  const start = document.getElementById("cfg-start")?.value || "1999-01-01";
+  const end   = document.getElementById("cfg-end")?.value   || "";
+
+  const resp = await fetch(`/api/benchmark/${symbol}?start=${start}${end ? "&end="+end : ""}`)
+    .then(r => r.json())
+    .catch(e => ({ error: String(e) }));
+
+  setProgress(0);
+  if (resp.error) { setStatus(`${symbol} error: ${resp.error}`); return; }
+
+  // Remove any existing entry for this benchmark
+  const existing = _runs.findIndex(r => r.run_id === run_id);
+  if (existing >= 0) _runs.splice(existing, 1);
+
+  const result = { ...resp, mode: "spy", run_id };
+  const runObj = {
+    run_id,
+    run_label: label + " (" + symbol + ")",
+    status: "complete",
+    cfg: {},
+    result,
+    metrics: extractMetrics(result),
+  };
+  _runs.unshift(runObj);
+  renderTable();
+
+  const m = runObj.metrics;
+  setStatus(`${label}  ${resp.start_date} → ${resp.end_date}  CAGR ${((m?.cagr||0)*100).toFixed(1)}%  Sharpe ${(m?.sharpe||0).toFixed(2)}`);
+  _benchmarkLoaded[run_id] = true;
+  setActiveRow(run_id);
+  showTearsheet(run_id);
+};
+
 // ── Extract flat metrics from result ─────────────────────────────────────
 function extractMetrics(result) {
   if (!result) return {};
   const mode = result.mode;
-  if (mode === "topn" || mode === "spy") {
+  if (mode === "topn" || mode === "spy" || mode === "benchmark") {
     const pm = result.portfolio_metrics || {};
     return { ...pm, elapsed_s: result.elapsed_s, mode };
   } else {

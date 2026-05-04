@@ -84,12 +84,30 @@ def _ensure_schema(con: duckdb.DuckDBPyConnection):
         n_stocks_avg          DOUBLE,
         elapsed_s             DOUBLE,
 
-        -- Full results JSON (compact — for tearsheet replay)
-        config_json           VARCHAR,
-        bucket_metrics_json   VARCHAR,
-        ic_data_json          VARCHAR,
-        bucket_equity_json    VARCHAR,
-        annual_ret_json       VARCHAR,
+        -- Full results JSON (complete — for tearsheet replay)
+        config_json              VARCHAR,
+        bucket_metrics_json      VARCHAR,
+        ic_data_json             VARCHAR,
+        bucket_equity_json       VARCHAR,
+        annual_ret_json          VARCHAR,
+        dates_json               VARCHAR,
+        tortoriello_json         VARCHAR,
+        universe_metrics_json    VARCHAR,
+        period_data_json         VARCHAR,
+        sector_attribution_json  VARCHAR,
+        spy_metrics_json         VARCHAR,
+        fitness_json             VARCHAR,
+
+        -- Fitness scalar columns (for fast sorting without JSON parse)
+        staircase_score      DOUBLE,
+        alpha_win_rate       DOUBLE,
+        avg_annual_alpha     DOUBLE,
+        bear_score           DOUBLE,
+        bull_score           DOUBLE,
+        downside_capture     DOUBLE,
+        alpha_sharpe         DOUBLE,
+        obq_fund_score       DOUBLE,
+        q1_calmar            DOUBLE,
 
         -- Status / review
         status          VARCHAR DEFAULT 'saved',
@@ -98,6 +116,38 @@ def _ensure_schema(con: duckdb.DuckDBPyConnection):
         tags            VARCHAR DEFAULT ''
     )
     """)
+
+    # Migrate: add new JSON columns if they don't exist yet (idempotent)
+    existing_cols = {r[0] for r in con.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name='factor_models'"
+    ).fetchall()}
+    new_cols = [
+        ("dates_json",              "VARCHAR"),
+        ("universe_equity_json",    "VARCHAR"),
+        ("tortoriello_json",        "VARCHAR"),
+        ("universe_metrics_json",   "VARCHAR"),
+        ("period_data_json",        "VARCHAR"),
+        ("sector_attribution_json", "VARCHAR"),
+        ("spy_metrics_json",        "VARCHAR"),
+        ("fitness_json",            "VARCHAR"),
+        ("staircase_score",         "DOUBLE"),
+        ("alpha_win_rate",          "DOUBLE"),
+        ("avg_annual_alpha",        "DOUBLE"),
+        ("bear_score",              "DOUBLE"),
+        ("bull_score",              "DOUBLE"),
+        ("downside_capture",        "DOUBLE"),
+        ("alpha_sharpe",            "DOUBLE"),
+        ("obq_fund_score",          "DOUBLE"),
+        ("q1_calmar",               "DOUBLE"),
+        ("trade_log_json",          "VARCHAR"),
+    ]
+    for col_name, dtype in new_cols:
+        if col_name not in existing_cols:
+            try:
+                con.execute(f"ALTER TABLE factor_models ADD COLUMN {col_name} {dtype}")
+                existing_cols.add(col_name)  # track so we don't double-add
+            except Exception:
+                pass  # already exists or other benign error
 
     # Index for fast queries by score
     con.execute("""
@@ -187,12 +237,6 @@ def save_factor_model(result: dict, overwrite: bool = True) -> str:
         if existing and not overwrite:
             return strategy_id  # already saved
 
-        # Compact equity (keep only Q1 and Qn for size)
-        bucket_equity_compact = {
-            "1": result.get("bucket_equity", {}).get("1", []),
-            str(n_buckets): result.get("bucket_equity", {}).get(str(n_buckets), []),
-        }
-
         row = {
             "strategy_id":          strategy_id,
             "run_label":            result.get("run_label", ""),
@@ -227,12 +271,32 @@ def save_factor_model(result: dict, overwrite: bool = True) -> str:
             "n_obs":                int(result.get("n_obs", 0)),
             "n_stocks_avg":         _safe(result.get("n_stocks_avg")),
             "elapsed_s":            _safe(result.get("elapsed_s")),
-            # JSON blobs
-            "config_json":          _jdump(config),
-            "bucket_metrics_json":  _jdump(bm),
-            "ic_data_json":         _jdump(result.get("ic_data", [])),
-            "bucket_equity_json":   _jdump(bucket_equity_compact),
-            "annual_ret_json":      _jdump(result.get("annual_ret_by_bucket", {})),
+            # JSON blobs — ALL buckets stored for full tearsheet replay
+            "config_json":              _jdump(config),
+            "bucket_metrics_json":      _jdump(bm),
+            "ic_data_json":             _jdump(result.get("ic_data", [])),
+            "bucket_equity_json":       _jdump(result.get("bucket_equity", {})),
+            "annual_ret_json":          _jdump(result.get("annual_ret_by_bucket", {})),
+            "dates_json":               _jdump(result.get("dates", [])),
+            "universe_equity_json":     _jdump(result.get("universe_equity", [])),
+            "tortoriello_json":         _jdump(result.get("tortoriello", {})),
+            "universe_metrics_json":    _jdump(result.get("universe_metrics", {})),
+            "period_data_json":         _jdump(result.get("period_data", [])),
+            "sector_attribution_json":  _jdump(result.get("sector_attribution", [])),
+            "spy_metrics_json":         _jdump(result.get("spy_metrics", {})),
+            "fitness_json":             _jdump(result.get("fitness", {})),
+            "trade_log_json":           _jdump(result.get("trade_log", [])),
+            # Fitness scalars for fast DB sorting
+            "staircase_score":  _safe(fm.get("staircase_score")),
+            "alpha_win_rate":   _safe(fm.get("alpha_win_rate")),
+            "avg_annual_alpha": _safe(fm.get("avg_annual_alpha")),
+            "bear_score":       _safe(fm.get("bear_score")),
+            "bull_score":       _safe(fm.get("bull_score")),
+            "downside_capture": _safe(fm.get("downside_capture")),
+            "alpha_sharpe":     _safe(fm.get("alpha_sharpe")),
+            "obq_fund_score":   _safe(fm.get("obq_fund_score")),
+            "q1_calmar":        _safe(q1m.get("calmar")),
+            "q1_surefire":      _safe(q1m.get("surefire_ratio")),
             "status":               "saved",
             "notes":                "",
             "promoted_to":          None,
@@ -251,6 +315,16 @@ def save_factor_model(result: dict, overwrite: bool = True) -> str:
             con.execute(f"INSERT INTO factor_models ({cols}) VALUES ({plh})", list(row.values()))
 
         con.commit()
+
+        # Also save to dedicated trade log DB (separate table, fast queries)
+        trade_log = result.get("trade_log", [])
+        if trade_log:
+            try:
+                from engine.trade_log_db import save_factor_trades
+                n_saved = save_factor_trades(strategy_id, score, trade_log)
+            except Exception as _tl_err:
+                pass  # non-fatal — trade log DB is supplementary
+
         return strategy_id
 
     finally:
@@ -267,11 +341,13 @@ def get_all_models(limit: int = 200) -> list[dict]:
             SELECT strategy_id, created_at::VARCHAR, run_label, score_column,
                    n_buckets, hold_months, start_date, end_date, cap_tier,
                    ic_mean, icir, ic_hit_rate, monotonicity_score, spearman_rho,
-                   quintile_spread_cagr, q1_cagr, q1_sharpe, q1_max_dd, q1_surefire,
+                   quintile_spread_cagr, q1_cagr, q1_sharpe, q1_max_dd, q1_surefire, q1_calmar,
                    qn_cagr, n_obs, n_stocks_avg, elapsed_s,
+                   staircase_score, alpha_win_rate, avg_annual_alpha,
+                   bear_score, bull_score, downside_capture, alpha_sharpe, obq_fund_score,
                    status, notes, promoted_to, tags
             FROM factor_models
-            ORDER BY icir DESC NULLS LAST
+            ORDER BY created_at DESC NULLS LAST
             LIMIT {limit}
         """).fetchdf()
         return rows.to_dict(orient="records")
@@ -289,9 +365,22 @@ def get_model(strategy_id: str) -> Optional[dict]:
         if row.empty: return None
         d = row.iloc[0].to_dict()
         # Parse JSON blobs
-        for col in ("config_json","bucket_metrics_json","ic_data_json","bucket_equity_json","annual_ret_json"):
-            try: d[col] = json.loads(d[col] or "{}")
-            except: d[col] = {}
+        json_cols = (
+            "config_json", "bucket_metrics_json", "ic_data_json",
+            "bucket_equity_json", "annual_ret_json",
+            "dates_json", "universe_equity_json", "tortoriello_json", "universe_metrics_json",
+            "period_data_json", "sector_attribution_json", "spy_metrics_json", "fitness_json",
+            "trade_log_json",
+        )
+        for col in json_cols:
+            raw = d.get(col)
+            if raw is None:
+                d[col] = [] if col in ("dates_json","ic_data_json","annual_ret_json","period_data_json","sector_attribution_json") else {}
+                continue
+            try:
+                d[col] = json.loads(raw)
+            except Exception:
+                d[col] = [] if col in ("dates_json","ic_data_json","annual_ret_json","period_data_json","sector_attribution_json") else {}
         return d
     finally:
         con.close()

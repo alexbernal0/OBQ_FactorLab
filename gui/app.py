@@ -741,6 +741,229 @@ def factor_bank_notes(strategy_id):
         return jsonify({"error": str(e)}), 500
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# PORTFOLIO BACKTEST API  —  /api/portfolio/*
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_portfolio_runs: dict = {}
+_portfolio_lock = threading.Lock()
+
+
+@app.route("/api/portfolio/scores")
+def portfolio_scores():
+    from engine.portfolio_backtest import SCORE_COLUMNS
+    return jsonify({"scores": SCORE_COLUMNS})
+
+
+@app.route("/api/portfolio/run", methods=["POST"])
+def portfolio_run():
+    try:
+        data = request.get_json(force=True) or {}
+        run_id = str(uuid.uuid4())
+        from engine.portfolio_backtest import PortfolioBacktestConfig, run_portfolio_backtest
+
+        cfg = PortfolioBacktestConfig(
+            score_column     = data.get("score_column",    "jcn_full_composite"),
+            top_n            = int(data.get("top_n",       20)),
+            sector_max       = int(data.get("sector_max",  5)),
+            rebalance_freq   = data.get("rebalance_freq",  "quarterly"),
+            start_date       = data.get("start_date",      "1990-07-31"),
+            end_date         = data.get("end_date",        "2024-12-31"),
+            min_price        = float(data.get("min_price", 5.0)),
+            cap_tier         = data.get("cap_tier",        "all"),
+            transaction_cost_bps = float(data.get("cost_bps", 15.0)),
+            stop_loss_pct    = float(data.get("stop_loss_pct", 0.0)),
+            run_label        = data.get("run_label", ""),
+        )
+
+        log_q: queue.Queue = queue.Queue(maxsize=200)
+        with _portfolio_lock:
+            _portfolio_runs[run_id] = {"status": "running", "result": None, "log_q": log_q}
+
+        def _cb(level, msg):
+            try: log_q.put_nowait({"level": level, "msg": msg})
+            except: pass
+
+        def _worker():
+            try:
+                result = run_portfolio_backtest(cfg, cb=lambda msg: _cb("info", msg))
+                with _portfolio_lock:
+                    _portfolio_runs[run_id]["result"] = result
+                    _portfolio_runs[run_id]["status"] = "complete" if result.get("status") != "error" else "error"
+
+                if result.get("status") == "complete":
+                    try:
+                        from engine.portfolio_bank import save_portfolio_model
+                        sid = save_portfolio_model(result, overwrite=True)
+                        with _portfolio_lock:
+                            _portfolio_runs[run_id]["strategy_id"] = sid
+                        _cb("ok", f"Saved to bank: {sid}  |  elapsed: {result.get('elapsed_s')}s")
+                    except Exception as save_err:
+                        _cb("ok", f"Done {result.get('elapsed_s')}s (bank save failed: {save_err})")
+                else:
+                    _cb("error", f"Error: {result.get('error')}")
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                with _portfolio_lock:
+                    _portfolio_runs[run_id]["status"] = "error"
+                    _portfolio_runs[run_id]["result"] = {"status": "error", "error": str(e)}
+                _cb("error", str(e))
+
+        threading.Thread(target=_worker, name=f"portfolio-{run_id}", daemon=True).start()
+        return jsonify({"run_id": run_id, "status": "running"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/portfolio/status/<run_id>")
+def portfolio_status(run_id):
+    info = _portfolio_runs.get(run_id)
+    if not info: return jsonify({"error": "unknown run"}), 404
+    return jsonify({"run_id": run_id, "status": info["status"],
+                    "strategy_id": info.get("strategy_id"),
+                    "has_result": info["result"] is not None})
+
+
+@app.route("/api/portfolio/stream/<run_id>")
+def portfolio_stream(run_id):
+    def gen():
+        info = _portfolio_runs.get(run_id)
+        if not info:
+            yield 'data: {"error":"unknown run"}\n\n'; return
+        q = info["log_q"]
+        yield f'data: {json.dumps({"level":"info","msg":"stream open"})}\n\n'
+        while True:
+            try:
+                entry = q.get(timeout=15)
+                yield f"data: {json.dumps(entry)}\n\n"
+                if info.get("status") in ("complete","error") and q.empty():
+                    break
+            except queue.Empty:
+                yield ": heartbeat\n\n"
+                if info.get("status") in ("complete","error"):
+                    break
+    return Response(stream_with_context(gen()), mimetype="text/event-stream",
+                    headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+
+
+@app.route("/api/portfolio/result/<run_id>")
+def portfolio_result(run_id):
+    info = _portfolio_runs.get(run_id)
+    if not info: return jsonify({"error": "unknown run"}), 404
+    if info["status"] == "running": return jsonify({"status": "running"}), 202
+    result = dict(info["result"] or {})
+    if info.get("strategy_id"):
+        result["strategy_id"] = info["strategy_id"]
+    def _clean(obj):
+        if isinstance(obj, dict): return {k: _clean(v) for k, v in obj.items()}
+        if isinstance(obj, list): return [_clean(v) for v in obj]
+        if isinstance(obj, float):
+            if math.isnan(obj) or math.isinf(obj): return None
+        return obj
+    return jsonify(_clean(result))
+
+
+@app.route("/api/portfolio/bank")
+def portfolio_bank():
+    try:
+        from engine.portfolio_bank import get_all_portfolio_models
+        models = get_all_portfolio_models(limit=500)
+        return jsonify({"models": models})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/portfolio/bank/<strategy_id>")
+def portfolio_bank_model(strategy_id):
+    try:
+        from engine.portfolio_bank import get_portfolio_model
+        m = get_portfolio_model(strategy_id)
+        if not m: return jsonify({"error": "not found"}), 404
+        return jsonify(m)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BENCHMARK API — /api/benchmark/<symbol>
+# Returns pre-computed benchmark metrics for QQQ, MDY, IWM, SPY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_benchmark_cache: dict = {}
+_benchmark_lock = threading.Lock()
+
+
+@app.route("/api/trades/factor/<strategy_id>")
+def factor_trades(strategy_id):
+    """Full Q1 trade log for a factor strategy from trade_log.duckdb."""
+    try:
+        from engine.trade_log_db import get_factor_trades, get_trade_summary
+        trades  = get_factor_trades(strategy_id)
+        summary = get_trade_summary(strategy_id, "factor")
+        return jsonify({"trades": trades, "summary": summary})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/trades/portfolio/<strategy_id>")
+def portfolio_trades(strategy_id):
+    """Full trade log for a portfolio strategy from trade_log.duckdb."""
+    try:
+        from engine.trade_log_db import get_portfolio_trades, get_trade_summary
+        trades  = get_portfolio_trades(strategy_id)
+        summary = get_trade_summary(strategy_id, "portfolio")
+        return jsonify({"trades": trades, "summary": summary})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/trades/count")
+def trades_count():
+    try:
+        from engine.trade_log_db import count_trades
+        return jsonify(count_trades())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/benchmark/<symbol>")
+def benchmark(symbol):
+    """Run or return cached benchmark for a given symbol."""
+    symbol_upper = symbol.upper()
+    if "." not in symbol_upper:
+        symbol_upper = symbol_upper + ".US"
+
+    allowed = {"QQQ.US", "MDY.US", "IWM.US", "SPY.US", "IVV.US", "DIA.US"}
+    if symbol_upper not in allowed:
+        return jsonify({"error": f"Unknown benchmark: {symbol_upper}"}), 400
+
+    start = request.args.get("start", "1993-01-01")
+    end   = request.args.get("end", None)
+    cache_key = f"{symbol_upper}_{start}_{end or 'latest'}"
+
+    with _benchmark_lock:
+        if cache_key in _benchmark_cache:
+            return jsonify(_benchmark_cache[cache_key])
+
+    try:
+        from engine.spy_backtest import run_benchmark
+        result = run_benchmark(symbol=symbol_upper, start_date=start, end_date=end)
+
+        def _clean(obj):
+            if isinstance(obj, dict): return {k: _clean(v) for k, v in obj.items()}
+            if isinstance(obj, list): return [_clean(v) for v in obj]
+            if isinstance(obj, float):
+                if math.isnan(obj) or math.isinf(obj): return None
+            return obj
+
+        result = _clean(result)
+        with _benchmark_lock:
+            _benchmark_cache[cache_key] = result
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/findings", methods=["GET","POST"])
 def findings_api():
     import datetime as _dt

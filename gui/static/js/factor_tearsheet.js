@@ -3,11 +3,11 @@
 
 const FT_COLORS = {
   q: ["#1d4ed8","#16a34a","#ca8a04","#ea580c","#dc2626"],  // Q1..Q5
-  get bg()      { return getComputedStyle(document.body).getPropertyValue("--bg").trim()||"#0a0e27"; },
-  get plot_bg() { return getComputedStyle(document.body).getPropertyValue("--bg-panel").trim()||"#1a1a2e"; },
-  get grid()    { return getComputedStyle(document.body).getPropertyValue("--border").trim()||"#2a2a4a"; },
-  get tick()    { return getComputedStyle(document.body).getPropertyValue("--text-dim").trim()||"#94a3b8"; },
-  get legend()  { return getComputedStyle(document.body).getPropertyValue("--text").trim()||"#e2e8f0"; },
+  get bg()      { return getComputedStyle(document.body).getPropertyValue("--bg").trim()||"#ffffff"; },
+  get plot_bg() { return getComputedStyle(document.body).getPropertyValue("--bg-panel").trim()||"#f8f9fa"; },
+  get grid()    { return getComputedStyle(document.body).getPropertyValue("--border").trim()||"#e5e7eb"; },
+  get tick()    { return getComputedStyle(document.body).getPropertyValue("--text-dim").trim()||"#374151"; },
+  get legend()  { return getComputedStyle(document.body).getPropertyValue("--text").trim()||"#111111"; },
   ic_pos: "rgba(22,163,74,0.7)", ic_neg: "rgba(220,38,38,0.7)",
 };
 const FT_CFG = { displayModeBar: false, responsive: true };
@@ -39,7 +39,8 @@ function ftDrawQuintileBar(divId, buckets, bucketMetrics, benchmarkCagr) {
   Plotly.newPlot(divId, [
     { x: labels, y: cagrs,  type:"bar", name:"CAGR %",
       marker:{ color: cagrs.map((_,i) => FT_COLORS.q[i] || "#888") },
-      text: cagrs.map(v=>(v>=0?"+":"")+v+"%"), textposition:"outside" },
+      text: cagrs.map(v=>(v>=0?"+":"")+v+"%"), textposition:"outside",
+      textfont:{size:10, color:FT_COLORS.tick}, cliponaxis:false },
     { x: labels, y: excess, type:"bar", name:"Excess vs BM",
       marker:{ color: excess.map(v=>v>=0?"rgba(22,163,74,0.4)":"rgba(220,38,38,0.4)") },
       text: excess.map(v=>(v>=0?"+":"")+v+"%"), textposition:"inside",
@@ -49,7 +50,7 @@ function ftDrawQuintileBar(divId, buckets, bucketMetrics, benchmarkCagr) {
     yaxis:{ ...{ gridcolor:FT_COLORS.grid, linecolor:"#cccccc", tickfont:{size:8}, autorange:true,
                  zeroline:true, zerolinecolor:"#374151", zerolinewidth:1 }, ticksuffix:"%" },
     xaxis:{ type:"-", gridcolor:FT_COLORS.grid, tickfont:{size:9} },
-    margin:{ l:48, r:8, t:8, b:36 },
+    margin:{ l:48, r:8, t:32, b:36 },  // t:32 gives room for outside labels
     showlegend:true,
   }), FT_CFG);
 }
@@ -83,7 +84,11 @@ function ftDrawCumulativeEquity(divId, dates, buckets, bucketEquity) {
 
 // ── 3. IC (Information Coefficient) bar chart over time ──────────────────────
 function ftDrawIC(divId, icData) {
-  if (!icData || !icData.length) return;
+  if (!icData || !icData.length) {
+    const el = document.getElementById(divId);
+    if (el) el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:10px;color:var(--text-muted)">No IC data available</div>';
+    return;
+  }
   const x = icData.map(d => d.date);
   const y = icData.map(d => +(d.ic_value * 100).toFixed(2));
   const mean_ic = y.reduce((a,b)=>a+b,0)/y.length;
@@ -104,7 +109,11 @@ function ftDrawIC(divId, icData) {
 
 // ── 4. Period Returns Heatmap (periods × buckets) ────────────────────────────
 function ftDrawPeriodHeatmap(divId, periodData, n_buckets) {
-  if (!periodData || !periodData.length) return;
+  if (!periodData || !periodData.length) {
+    const el = document.getElementById(divId);
+    if (el) el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:10px;color:var(--text-muted)">No period data available</div>';
+    return;
+  }
   const dates  = periodData.map(d => d.date);
   const zData  = [];
   for (let b = 1; b <= n_buckets; b++) {
@@ -115,27 +124,45 @@ function ftDrawPeriodHeatmap(divId, periodData, n_buckets) {
   }
   const yLabels = Array.from({length:n_buckets}, (_,i)=>"Q"+(i+1));
 
+  // Format dates as "MMM YY" for readable x-axis labels
+  const xLabels = dates.map(d => {
+    const dt = new Date(d);
+    return dt.toLocaleDateString("en-US", {month:"short", year:"2-digit"});
+  });
+
   Plotly.newPlot(divId, [{
-    z: zData, x: dates, y: yLabels,
+    z: zData, x: xLabels, y: yLabels,
     type:"heatmap",
-    colorscale:[[0,"#b91c1c"],[0.5,"#fefce8"],[1,"#15803d"]],
-    zmid:0, zmin:-20, zmax:20,
+    colorscale:[[0,"#b91c1c"],[0.45,"#fff7ed"],[0.5,"#fefce8"],[0.55,"#f0fdf4"],[1,"#15803d"]],
+    zmid:0, zmin:-25, zmax:25,
+    // Show value inside each cell — larger font, no % sign clutter
     text: zData.map(row=>row.map(v=>v==null?"":v.toFixed(1)+"%")),
-    texttemplate:"%{text}", textfont:{size:7},
+    texttemplate:"%{text}",
+    textfont:{size:8, color:"#111111"},
     showscale:true,
-    colorbar:{ title:{text:"%",side:"right"}, tickfont:{size:7}, len:0.8 },
+    colorbar:{ title:{text:"Period Ret %",side:"right"}, tickfont:{size:8}, len:0.9, thickness:12 },
+    xgap:1, ygap:1,
   }], {
     paper_bgcolor:FT_COLORS.bg, plot_bgcolor:FT_COLORS.plot_bg,
-    margin:{l:36,r:60,t:8,b:40},
-    font:{family:"Segoe UI,Arial",size:8,color:FT_COLORS.tick},
-    xaxis:{type:"date",tickfont:{size:7},gridcolor:FT_COLORS.grid},
-    yaxis:{tickfont:{size:8}},
+    margin:{l:44,r:80,t:8,b:80},  // b:80 for rotated labels
+    font:{family:"Segoe UI,Arial",size:9,color:FT_COLORS.tick},
+    xaxis:{
+      tickfont:{size:8,color:FT_COLORS.tick},
+      tickangle:-45,    // rotate 45° so dates are readable
+      gridcolor:FT_COLORS.grid,
+      showgrid:false,
+    },
+    yaxis:{tickfont:{size:10,color:FT_COLORS.tick}, showgrid:false},
   }, FT_CFG);
 }
 
 // ── 5. Annual Returns by Quintile (grouped bar chart by year) ─────────────────
 function ftDrawAnnualBars(divId, annualRetByBucket, n_buckets) {
-  if (!annualRetByBucket) return;
+  if (!annualRetByBucket || !Object.keys(annualRetByBucket).length) {
+    const el = document.getElementById(divId);
+    if (el) el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:10px;color:var(--text-muted)">No annual return data available</div>';
+    return;
+  }
   const years = [...new Set(
     Object.values(annualRetByBucket).flat().map(d=>d.year)
   )].sort();
@@ -394,6 +421,8 @@ function ftBuildMainTable(result) {
   const tort = result.tortoriello || {};
   const um = result.universe_metrics || {};
   const fm = result.factor_metrics || {};
+  const spy = result.spy_metrics || {};  // SPY benchmark column
+  const hasSpy = Object.keys(spy).length > 0;
 
   function pct(v,d=1,sign=false) {
     if(v==null||isNaN(+v)) return "—";
@@ -422,73 +451,93 @@ function ftBuildMainTable(result) {
 
   // Row definitions: [label, getter, formatter, colorFn]
   const rows = [
+    // getter signature: b = "1".."5" for buckets, "univ" for universe, "spy" for SPY
     ["CAGR — Period Rebalance",
-      b => b==="univ"?(um.cagr):((bm[b]||{}).cagr),
+      b => b==="univ"?(um.cagr):b==="spy"?(spy.cagr):((bm[b]||{}).cagr),
       v => pct(v,1,true), v => vc(v)],
 
     ["Avg Excess Return vs. Universe",
-      b => b==="univ"?null:((tort[b]||{}).avg_excess_vs_univ),
+      b => b==="univ"?null:b==="spy"?null:((tort[b]||{}).avg_excess_vs_univ),
       v => pct(v,1,true), v => vc(v)],
 
     ["Value of $10,000 Invested",
-      b => b==="univ"?(result.universe_terminal):((tort[b]||{}).terminal_wealth),
+      b => b==="univ"?(result.universe_terminal):b==="spy"?(spy.terminal_wealth):((tort[b]||{}).terminal_wealth),
       v => dollar(v), () => "color:var(--text)"],
 
     ["% of 1-Period Strategy Outperforms Universe",
-      b => b==="univ"?null:((tort[b]||{}).pct_1y_beats_univ),
+      b => b==="univ"?null:b==="spy"?null:((tort[b]||{}).pct_1y_beats_univ),
       v => pct(v,1), v => v!=null?(v>=0.6?"color:#4ade80":v>=0.5?"color:var(--text)":"color:#f87171"):"color:var(--text-dim)"],
 
     ["% Rolling 3-Year Periods Strategy Outperforms",
-      b => b==="univ"?null:((tort[b]||{}).pct_3y_beats_univ),
+      b => b==="univ"?null:b==="spy"?null:((tort[b]||{}).pct_3y_beats_univ),
       v => pct(v,1), v => v!=null?(v>=0.7?"color:#4ade80":v>=0.6?"color:var(--text)":"color:#f87171"):"color:var(--text-dim)"],
 
     ["Maximum Gain",
-      b => b==="univ"?(um.best_month):((tort[b]||{}).max_gain),
+      b => b==="univ"?(um.best_month):b==="spy"?(spy.best_month):((tort[b]||{}).max_gain),
       v => pct(v,1,true), () => "color:#4ade80"],
 
     ["Maximum Loss",
-      b => b==="univ"?(um.worst_month):((tort[b]||{}).max_loss),
+      b => b==="univ"?(um.worst_month):b==="spy"?(spy.worst_month):((tort[b]||{}).max_loss),
       v => pct(v,1), () => "color:#f87171"],
 
     ["Sharpe Ratio",
-      b => b==="univ"?(um.sharpe):((bm[b]||{}).sharpe),
+      b => b==="univ"?(um.sharpe):b==="spy"?(spy.sharpe):((bm[b]||{}).sharpe),
       v => num(v,2), v => v!=null?(v>=1?"color:#4ade80":v>=0.5?"color:var(--text)":"color:#f87171"):"color:var(--text-dim)"],
 
     ["Standard Deviation of Returns (Ann.)",
-      b => b==="univ"?(um.ann_vol):((tort[b]||{}).std_dev_ann),
+      b => b==="univ"?(um.ann_vol):b==="spy"?(spy.ann_vol):((tort[b]||{}).std_dev_ann),
       v => pct(v,2), () => "color:var(--text)"],
 
     ["Beta (vs. Universe)",
-      b => b==="univ"?1.0:((tort[b]||{}).beta_vs_univ),
-      v => num(v,2), () => "color:var(--text)"],
+      b => b==="univ"?1.0:b==="spy"?null:((tort[b]||{}).beta_vs_univ),
+      v => v!=null?num(v,2):"—", () => "color:var(--text)"],
 
     ["Alpha (vs. Universe, Ann.)",
-      b => b==="univ"?0:((tort[b]||{}).alpha_vs_univ),
+      b => b==="univ"?0:b==="spy"?null:((tort[b]||{}).alpha_vs_univ),
       v => pct(v,2,true), v => vc(v)],
 
     ["Average Portfolio Size",
-      b => b==="univ"?null:((tort[b]||{}).avg_portfolio_size),
+      b => b==="univ"?null:b==="spy"?null:((tort[b]||{}).avg_portfolio_size),
       v => v!=null?Math.round(v):"—", () => "color:var(--text)"],
 
     ["Avg Companies Outperforming",
-      b => b==="univ"?null:((tort[b]||{}).avg_beat_universe),
+      b => b==="univ"?null:b==="spy"?null:((tort[b]||{}).avg_beat_universe),
       v => v!=null?Math.round(v):"—", () => "color:#4ade80"],
 
     ["Avg Companies Underperforming",
-      b => b==="univ"?null:((tort[b]||{}).avg_lag_universe),
+      b => b==="univ"?null:b==="spy"?null:((tort[b]||{}).avg_lag_universe),
       v => v!=null?Math.round(v):"—", () => "color:#f87171"],
 
     ["Median Factor Score (Bucket)",
-      b => b==="univ"?null:((tort[b]||{}).median_factor_score),
+      b => b==="univ"?null:b==="spy"?null:((tort[b]||{}).median_factor_score),
       v => num(v,1), () => "color:#a78bfa"],
 
     ["Average Market Cap ($M)",
-      b => b==="univ"?null:((tort[b]||{}).avg_market_cap),
+      b => b==="univ"?null:b==="spy"?null:((tort[b]||{}).avg_market_cap),
       v => v!=null?("$"+Math.round(v/1e6).toLocaleString()+"M"):"—", () => "color:var(--text)"],
+
+    ["Max Drawdown",
+      b => b==="univ"?(um.max_dd):b==="spy"?(spy.max_dd):((bm[b]||{}).max_dd),
+      v => pct(v,1), () => "color:#f87171"],
+
+    ["Calmar Ratio",
+      b => b==="univ"?(um.calmar):b==="spy"?(spy.calmar):((bm[b]||{}).calmar),
+      v => num(v,2), v => v!=null?(v>=0.5?"color:#4ade80":v>=0.2?"color:var(--text)":"color:#f87171"):"color:var(--text-dim)"],
   ];
 
-  const colHeaders = [...buckets.map(b=>"<b>"+b+(b===1?"st":b===2?"nd":b===3?"rd":"th")+" Quintile</b>"), "<b>Universe</b>"];
-  const colColors  = [...buckets.map((_,i)=>FT_COLORS.q[i]||"#aaa"), "#94a3b8"];
+  // Column headers: Quintiles + Universe + SPY (if available)
+  const spyCols   = hasSpy ? ["<b>S&amp;P 500</b>"] : [];
+  const spyColors = hasSpy ? ["#f59e0b"] : [];
+  const colHeaders = [
+    ...buckets.map(b=>"<b>"+b+(b===1?"st":b===2?"nd":b===3?"rd":"th")+" Quintile</b>"),
+    "<b>Universe</b>",
+    ...spyCols,
+  ];
+  const colColors = [
+    ...buckets.map((_,i)=>FT_COLORS.q[i]||"#aaa"),
+    "#94a3b8",
+    ...spyColors,
+  ];
 
   let html = `<table style="width:100%;border-collapse:collapse;font-size:9.5px;font-family:'Segoe UI',sans-serif">
     <thead><tr>
@@ -499,8 +548,10 @@ function ftBuildMainTable(result) {
   rows.forEach(([label, getter, fmt, colorFn], ri) => {
     const bg = ri%2===0?"background:var(--bg)":"background:var(--bg-panel)";
     html += `<tr style="${bg}"><td ${SL}>${label}</td>`;
-    const allCols = [...buckets.map(b=>getter(String(b))), getter("univ")];
-    allCols.forEach((v,ci) => {
+    // Bucket columns + Universe + optional SPY
+    const colKeys = [...buckets.map(b=>String(b)), "univ", ...(hasSpy?["spy"]:[])];
+    colKeys.forEach(key => {
+      const v = getter(key);
       const formatted = v!=null ? fmt(v) : "—";
       const color = v!=null ? colorFn(v) : "color:var(--text-dim)";
       html += `<td ${S} style="${S.slice(7,-1)};${color}">${formatted}</td>`;
@@ -628,7 +679,11 @@ function ftDrawRolling3YTopBottom(divId, buckets, tort) {
   const xn  = tn.roll_3y_dates || [];
   const yn  = (tn.roll_3y_excess||[]).map(v=>+(v*100).toFixed(2));
 
-  if(!x1.length && !xn.length) return;
+  if(!x1.length && !xn.length) {
+    const el = document.getElementById(divId);
+    if (el) el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:10px;color:var(--text-muted)">Need ≥3 years of data for rolling chart</div>';
+    return;
+  }
 
   Plotly.newPlot(divId, [
     { x:x1, y:y1, type:"scatter", mode:"lines",

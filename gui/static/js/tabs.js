@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var TABS = ["factor", "portfolio", "results", "tracker", "findings"];
+  var TABS = ["factor", "portfolio", "results", "tracker", "findings", "wiki"];
 
   function switchMainTab(tab) {
     TABS.forEach(function (t) {
@@ -16,6 +16,8 @@
 
   // Per-tab init callbacks
   if (tab === "factor"    && typeof factorLabInit    === "function") factorLabInit();
+  if (tab === "portfolio" && typeof pmLabInit        === "function") pmLabInit();
+  if (tab === "wiki"      && typeof wikiInit         === "function") wikiInit();
   if (tab === "tracker"   && typeof trkInit          === "function") trkInit();
   if (tab === "findings"  && typeof findingsInit     === "function") findingsInit();
   // RESULTS tab hosts the strategy backtest (app.js) — auto-load SPY on first visit
@@ -103,8 +105,9 @@
   // ── Init on DOMContentLoaded ───────────────────────────────────
   document.addEventListener("DOMContentLoaded", function () {
     // Wire up dividers
-    makeDivider("divider",     "left-pane",     200, 350, "#view-portfolio [id^=plt_]");
+    makeDivider("divider",     "left-pane",     200, 350, "#view-results [id^=plt_]");
     makeDivider("fl-divider",  "fl-left-pane",  350, 350, "#view-factor [id^=flt_]");
+    makeDivider("pm-divider",  "pm-left-pane",  350, 350, "#view-portfolio [id^=plt_]");
     makeDivider("res-divider", "res-left-pane", 350, 350, "#view-results [id^=plt_],[id^=flt_]");
     makeDivider("trk-divider", "trk-left-pane", 350, 350, "#view-tracker [id^=plt_]");
 

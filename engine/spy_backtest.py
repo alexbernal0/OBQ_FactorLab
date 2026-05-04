@@ -20,7 +20,22 @@ def run_spy_backtest(
     rf_annual: float = 0.04,
     cb=None,
 ) -> dict:
-    """Pull SPY daily prices → resample monthly → compute full tearsheet."""
+    """
+    S&P 500 total return benchmark.
+    If start_date < 1993-01-29, automatically delegates to spx_backtest
+    which splices SPX price + historical dividend yield for pre-SPY period.
+    """
+    # Auto-route to SPX splice if start pre-dates SPY
+    if start_date and start_date < "1993-01-29":
+        try:
+            from engine.spx_backtest import run_spx_backtest
+            return run_spx_backtest(start_date=start_date, end_date=end_date,
+                                    rf_annual=rf_annual, cb=cb)
+        except Exception as e:
+            # Fall through to SPY-only if SPX data unavailable
+            if cb:
+                try: cb("info", f"SPX splice failed ({e}), using SPY from 1993")
+                except: pass
     import time
     t0 = time.time()
 
@@ -115,6 +130,114 @@ def run_spy_backtest(
         "bm_metrics":        {},
         "monthly_heatmap":   heatmap,
         # Annual returns for bar chart [{year, ret}]
+        "annual_ret_by_year": [
+            {"year": int(yr), "ret": float(r)}
+            for yr, r in annual_ret.items()
+        ],
+    }
+
+
+def run_benchmark(
+    symbol: str,
+    start_date: str,
+    end_date: str | None = None,
+    rf_annual: float = 0.04,
+    cb=None,
+) -> dict:
+    """
+    Generic ETF benchmark backtest.
+    Supports: QQQ.US (Nasdaq 100), MDY.US (S&P 400 Mid-Cap),
+              IWM.US (Russell 2000 Small-Cap), SPY.US (S&P 500)
+    Returns same format as run_spy_backtest().
+    """
+    import time
+    t0 = time.time()
+
+    if end_date in (None, "null", "None", "latest"):
+        end_date = datetime.date.today().strftime("%Y-%m-%d")
+
+    def _cb(msg):
+        if cb:
+            try: cb("info", msg)
+            except: pass
+
+    LABELS = {
+        "QQQ.US": "Nasdaq 100 (QQQ)",
+        "MDY.US": "S&P 400 Mid-Cap (MDY)",
+        "IWM.US": "Russell 2000 Small-Cap (IWM)",
+        "SPY.US": "S&P 500 (SPY)",
+        "IVV.US": "S&P 500 (IVV)",
+        "DIA.US": "Dow Jones (DIA)",
+    }
+    label = LABELS.get(symbol, symbol)
+
+    _cb(f"Loading {label} from {start_date}...")
+    con = duckdb.connect(MIRROR, read_only=True)
+
+    df = con.execute(f"""
+        SELECT date::DATE AS dt, adjusted_close AS close
+        FROM PROD_EOD_ETFs
+        WHERE symbol = '{symbol}'
+          AND date::DATE BETWEEN '{start_date}'::DATE AND '{end_date}'::DATE
+          AND adjusted_close IS NOT NULL AND adjusted_close > 0.01
+        ORDER BY dt
+    """).fetchdf()
+    con.close()
+
+    if df.empty:
+        return {"status": "error", "error": f"No data found for {symbol}"}
+
+    _cb(f"Loaded {len(df):,} {symbol} daily bars  {df['dt'].min()} -> {df['dt'].max()}")
+
+    df["dt"] = pd.to_datetime(df["dt"])
+    df = df.set_index("dt").sort_index()
+    monthly = df["close"].resample("ME").last().dropna()
+
+    if len(monthly) < 12:
+        return {"status": "error", "error": f"Not enough data for {symbol}: {len(monthly)} months"}
+
+    monthly_ret = monthly.pct_change().dropna()
+    equity = (1 + monthly_ret).cumprod()
+    equity = pd.concat([pd.Series([1.0], index=[monthly.index[0]]), equity])
+
+    annual_ret = monthly_ret.groupby(monthly_ret.index.year).apply(
+        lambda x: (1 + x).prod() - 1
+    )
+
+    metrics = compute_all(
+        equity=equity.values,
+        monthly_ret=monthly_ret.values,
+        annual_ret=annual_ret.values,
+        rf_annual=rf_annual,
+        periods_per_year=12,
+        label=label,
+    )
+    metrics["terminal_wealth"] = round(10000 * float(equity.iloc[-1]), 0)
+
+    heatmap = _build_heatmap(monthly_ret)
+    elapsed = round(time.time() - t0, 1)
+    _cb(f"{label} complete in {elapsed}s | CAGR: {metrics.get('cagr',0)*100:.2f}%")
+
+    return {
+        "status":            "complete",
+        "mode":              "benchmark",
+        "run_id":            symbol.replace(".", "_").lower() + "-benchmark",
+        "run_label":         label,
+        "start_date":        str(equity.index[0].date()),
+        "end_date":          str(equity.index[-1].date()),
+        "n_periods":         len(monthly_ret),
+        "elapsed_s":         elapsed,
+        "portfolio_equity":  [round(v, 6) for v in equity.values],
+        "bm_equity":         [round(v, 6) for v in equity.values],
+        "equity_dates":      [str(d.date()) for d in equity.index],
+        "period_data": [
+            {"date": str(d.date()), "portfolio_return": float(r),
+             "universe_return": float(r), "n_stocks": 1, "cost_drag": 0.0}
+            for d, r in monthly_ret.items()
+        ],
+        "portfolio_metrics": metrics,
+        "bm_metrics":        {},
+        "monthly_heatmap":   heatmap,
         "annual_ret_by_year": [
             {"year": int(yr), "ret": float(r)}
             for yr, r in annual_ret.items()

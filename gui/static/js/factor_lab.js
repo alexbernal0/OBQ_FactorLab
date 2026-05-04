@@ -54,7 +54,7 @@
     const info = document.getElementById("fl-score-info");
     if (info) info.textContent = `${r.min_date} → ${r.max_date}  ·  ${r.symbols?.toLocaleString()} symbols`;
     const start = document.getElementById("fl-start-date");
-    if (start && !start.value) start.value = r.min_date > "2005-01-31" ? r.min_date : "2005-01-31";
+    if (start && !start.value) start.value = r.min_date > "1990-07-31" ? r.min_date : "1990-07-31";
   }
 
   // ── Run button ─────────────────────────────────────────────────────────────
@@ -179,16 +179,21 @@
       const spread = fm.quintile_spread_cagr;
       const sCol = spread != null ? (spread >= 0 ? "g" : "r") : "";
 
+      const _sid = run.result?.strategy_id || run.run_id;
       tr.innerHTML = `
         <div class="fl-td dim" style="flex:0 0 80px;font-size:10px">${icon} ${run.run_label.slice(0,12)}</div>
         <div class="fl-td ${sCol}" style="flex:0 0 65px">${pct(spread,2)}</div>
-        <div class="fl-td" style="flex:0 0 50px">${num(fm.ic_mean,4)}</div>
-        <div class="fl-td" style="flex:0 0 48px">${num(fm.icir,2)}</div>
-        <div class="fl-td" style="flex:0 0 48px">${pctR(fm.ic_hit_rate,0)}</div>
-        <div class="fl-td" style="flex:0 0 52px">${num(fm.monotonicity_score!=null?fm.monotonicity_score*100:null,0)}%</div>
+        <div class="fl-td" style="flex:0 0 46px">${num(fm.icir,2)}</div>
+        <div class="fl-td" style="flex:0 0 44px">${pctR(fm.ic_hit_rate,0)}</div>
+        <div class="fl-td" style="flex:0 0 48px">${num(fm.monotonicity_score!=null?fm.monotonicity_score*100:null,0)}%</div>
         <div class="fl-td" style="flex:0 0 50px">${pct(fm.q1_cagr,1)}</div>
-        <div class="fl-td" style="flex:0 0 48px">${num(fm.q1_sharpe,2)}</div>
-        <div class="fl-td dim" style="flex:1;font-size:9px">${run.run_label.slice(13,60)}</div>
+        <div class="fl-td" style="flex:0 0 44px">${num(fm.q1_sharpe,2)}</div>
+        <div class="fl-td dim" style="flex:1;font-size:9px;min-width:0;overflow:hidden;text-overflow:ellipsis">${run.run_label.slice(0,40)}</div>
+        ${!isRunning && run.status !== "error" ? `<button
+          title="Send Q1 to Results tab"
+          onclick="event.stopPropagation();flPromoteToResults('${_sid}')"
+          style="flex:0 0 20px;width:20px;margin:0 3px;padding:1px 4px;background:var(--accent2);color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:10px;font-weight:900;line-height:1.4;align-self:center"
+        >+</button>` : "<div style='flex:0 0 20px'></div>"}
       `;
       body.appendChild(tr);
     });
@@ -222,33 +227,76 @@
 
     // ── Header ────────────────────────────────────────────────────────────────
     const hdr = document.createElement("div");
-    hdr.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#f8f9fa;border-bottom:1px solid #e5e7eb;flex-shrink:0";
+    hdr.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:var(--bg-panel);border-bottom:1px solid var(--border);flex-shrink:0";
+    // Build full config description line
+    const cfg = result.config || {};
+    const scoreDisplay = cfg.score_column || run.run_label.split('|')[0].trim();
+    // Score display name lookup
+    const scoreNames = {
+      jcn_full_composite:'JCN Composite', jcn_qarp:'JCN QARP', jcn_garp:'JCN GARP',
+      jcn_quality_momentum:'JCN Quality-Mom', jcn_value_momentum:'JCN Value-Mom',
+      jcn_growth_quality_momentum:'JCN GQM', jcn_fortress:'JCN Fortress',
+      jcn_alpha_trifecta:'JCN Alpha Trifecta', value_score:'Value', quality_score:'Quality',
+      growth_score:'Growth', finstr_score:'FinStr', momentum_score:'Momentum',
+      momentum_af_score:'Momentum AF', momentum_fip_score:'Momentum FIP',
+      momentum_sys_score:'Momentum Sys', value_score_universe:'Value (Universe)',
+      quality_score_universe:'Quality (Universe)', growth_score_universe:'Growth (Universe)',
+      finstr_score_universe:'FinStr (Universe)', af_universe_score:'AF (Universe)',
+      longeq_rank:'LongEQ Rank', rulebreaker_rank:'Rulebreaker Rank',
+      fundsmith_rank:'Fundsmith Rank', moat_score:'Moat Score', moat_rank:'Moat Rank',
+    };
+    const scoreName = scoreNames[cfg.score_column] || cfg.score_column || '';
+    const cfgLine = [
+      scoreName             ? `Factor: ${scoreName}`               : null,
+      cfg.n_buckets         ? `${cfg.n_buckets}Q`                  : null,
+      cfg.hold_months       ? `${cfg.hold_months}mo hold`          : null,
+      cfg.rebalance_freq    ? cfg.rebalance_freq                   : null,
+      cfg.cap_tier && cfg.cap_tier !== 'all' ? cfg.cap_tier + ' cap' : (cfg.min_market_cap > 0 ? `$${(cfg.min_market_cap/1e9).toFixed(0)}B+ mktcap` : 'All-Cap'),
+      cfg.start_date        ? `${cfg.start_date.slice(0,4)}–${(cfg.end_date||'').slice(0,4)}` : null,
+      cfg.cost_bps          ? `${cfg.cost_bps}bps cost`            : null,
+    ].filter(Boolean).join('  ·  ');
+
+    const stratId = result.strategy_id || run.run_id || '';
     hdr.innerHTML = `
-      <div>
-        <div style="font-size:13px;font-weight:800;color:#0066cc;letter-spacing:1px">${run.run_label}</div>
-        <div style="font-size:9px;color:#6b7280;margin-top:2px">${result.dates?.[0]||""} → ${result.dates?.[result.dates.length-1]||""}  ·  ${result.n_obs||0} periods  ·  ~${Math.round(result.n_stocks_avg||0)} stocks/period</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:800;color:var(--accent2);letter-spacing:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${run.run_label}</div>
+        <div style="font-size:9px;color:var(--text-muted);margin-top:2px">${result.dates?.[0]||""} → ${result.dates?.[result.dates.length-1]||""}  ·  ${result.n_obs||0} periods  ·  ~${Math.round(result.n_stocks_avg||0)} stocks/period${stratId ? '  ·  ' + stratId : ''}</div>
+        <div style="font-size:8.5px;color:var(--accent2);margin-top:3px;opacity:0.85">${cfgLine}</div>
       </div>
       <div style="display:flex;gap:6px">
-        <button onclick="flExportCSV('${run_id}')" style="background:#16a34a;color:#fff;border:none;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;border-radius:3px">CSV</button>
+        <button onclick="flExportCSV('${run_id}')" style="background:#16a34a;color:#fff;border:none;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;border-radius:3px">&#128202; CSV</button>
+        <button onclick="flExportPDF('${run_id}')" style="background:#0066cc;color:#fff;border:none;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;border-radius:3px">&#128196; PDF</button>
+        <button onclick="flSnapTearsheet('${run_id}')" style="background:#7c3aed;color:#fff;border:none;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;border-radius:3px">&#128247; PNG</button>
       </div>
     `;
     tsContent.appendChild(hdr);
 
     // ── KPI strip ─────────────────────────────────────────────────────────────
     const kpiRow = document.createElement("div");
-    kpiRow.style.cssText = "display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:#e5e7eb;flex-shrink:0";
+    kpiRow.style.cssText = "display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border);flex-shrink:0";
+    // OBQ Fund Score: 30% AlphaWin + 25% AlphaMag + 20% DDProtect + 15% DnCapture + 10% AlphaSharpe
+    const obqFund = fm.obq_fund_score;
+    const obqFundStr = obqFund != null ? obqFund.toFixed(3) : "—";
+    const obqFundCol = obqFund != null ? (obqFund >= 0.5 ? "#16a34a" : obqFund >= 0.3 ? "#f59e0b" : "#dc2626") : null;
+
+    // Staircase = avg CAGR step Q1→Q2→Q3→Q4→Q5 (positive = clean monotonic separation)
+    const stair = fm.staircase_score;
+    const stairStr = stair != null ? (stair >= 0 ? "+" : "") + (stair * 100).toFixed(2) + "%" : "—";
+    const stairCol = stair != null ? (stair >= 0.02 ? "#16a34a" : stair >= 0 ? null : "#dc2626") : null;
+
     const kpis = [
-      ["Q1-Q5 SPREAD", ((fm.quintile_spread_cagr||0)*100).toFixed(2)+"%", (fm.quintile_spread_cagr||0)>0?"#16a34a":"#dc2626"],
-      ["IC MEAN",       (fm.ic_mean||0).toFixed(4),                        (fm.ic_mean||0)>0.05?"#16a34a":"#374151"],
-      ["ICIR",          (fm.icir||0).toFixed(2),                           (fm.icir||0)>=0.5?"#16a34a":"#374151"],
-      ["IC HIT RATE",   ((fm.ic_hit_rate||0)*100).toFixed(1)+"%",          (fm.ic_hit_rate||0)>=0.55?"#16a34a":"#374151"],
-      ["MONOTONICITY",  ((fm.monotonicity_score||0)*100).toFixed(0)+"%",   (fm.monotonicity_score||0)>=0.8?"#16a34a":"#374151"],
-      ["Q1 SHARPE",     (fm.q1_sharpe||0).toFixed(2),                     (fm.q1_sharpe||0)>=0.5?"#16a34a":"#374151"],
+      ["Q1-Q5 SPREAD",    ((fm.quintile_spread_cagr||0)*100).toFixed(2)+"%", (fm.quintile_spread_cagr||0)>0?"#16a34a":"#dc2626"],
+      ["IC MEAN",          (fm.ic_mean||0).toFixed(4),                        (fm.ic_mean||0)>0.05?"#16a34a":null],
+      ["ICIR",             (fm.icir||0).toFixed(2),                           (fm.icir||0)>=0.5?"#16a34a":null],
+      ["IC HIT RATE",      ((fm.ic_hit_rate||0)*100).toFixed(1)+"%",          (fm.ic_hit_rate||0)>=0.55?"#16a34a":null],
+      ["STAIRCASE",        stairStr,                                           stairCol],
+      ["OBQ FUND SCORE",   obqFundStr,                                        obqFundCol],
     ];
     kpis.forEach(([lbl, val, col]) => {
       const box = document.createElement("div");
-      box.style.cssText = "background:#fff;padding:8px 6px;text-align:center";
-      box.innerHTML = `<div style="font-size:8px;color:#6b7280;text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px">${lbl}</div><div style="font-size:15px;font-weight:700;color:${col}">${val}</div>`;
+      box.style.cssText = "background:var(--bg-panel);padding:8px 6px;text-align:center";
+      const valColor = col || "var(--text)";
+      box.innerHTML = `<div style="font-size:8px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px">${lbl}</div><div style="font-size:15px;font-weight:700;color:${valColor}">${val}</div>`;
       kpiRow.appendChild(box);
     });
     tsContent.appendChild(kpiRow);
@@ -262,8 +310,8 @@
     }
     function chartBox(title, h) {
       const box = document.createElement("div");
-      box.style.cssText = "background:#fff;border:1px solid #e5e7eb;border-radius:4px;padding:8px 10px;overflow:hidden";
-      if (title) box.innerHTML = `<div style="font-size:8px;font-weight:700;color:#6b7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">${title}</div>`;
+      box.style.cssText = "background:var(--bg-panel);border:1px solid var(--border);border-radius:4px;padding:8px 10px;overflow:hidden";
+      if (title) box.innerHTML = `<div style="font-size:8px;font-weight:700;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">${title}</div>`;
       const d = document.createElement("div");
       d.id = _uid(); d.style.cssText = `height:${h}px;width:100%`;
       box.appendChild(d);
@@ -306,7 +354,7 @@
 
     sec("PERIOD RETURNS HEATMAP");
     const r3 = chartRow(true);
-    const {box:hmBox, id:hmId} = chartBox("", 200);
+    const {box:hmBox, id:hmId} = chartBox("", 280);  // taller for rotated x labels
     r3.appendChild(hmBox);
 
     // ── 5. ANNUAL RETURNS ─────────────────────────────────────────────────
@@ -334,6 +382,10 @@
     sec("FULL FACTOR METRICS");
     tsContent.appendChild(ftBuildMetricsTable(fm, buckets, result.bucket_metrics || {}));
 
+    // ── Q1 TRADE LOG ────────────────────────────────────────────────────────
+    sec("Q1 TRADE LOG — FULL AUDIT (every Q1 position entry/exit)");
+    tsContent.appendChild(_buildFactorTradeLog(result.trade_log || []));
+
     // ── Draw all Plotly charts after DOM settles ────────────────────────────
     setTimeout(() => {
       try { ftDrawExcessReturnBar(exId, buckets, result.tortoriello||{}, result.universe_metrics||{}); } catch(e){ console.error("excess",e); }
@@ -346,13 +398,195 @@
       try { ftDrawAnnualBars(annId, result.annual_ret_by_bucket||{}, n); } catch(e){ console.error("ann",e); }
     }, 200);
 
-    // Force Plotly resize after layout completes
-    [600, 1200, 2000].forEach(delay => setTimeout(() => {
+    // Force Plotly resize after layout completes — multiple passes for bank-loaded tearsheets
+    [300, 600, 1000, 1800, 3000, 5000].forEach(delay => setTimeout(() => {
       document.querySelectorAll("#fl-ts-content [id^=flt_]").forEach(d => {
-        try { if(d.data) Plotly.Plots.resize(d); } catch(e){}
+        try {
+          // Force explicit height then resize
+          if (d.offsetHeight === 0 && d.parentElement) {
+            const ph = parseInt(d.style.height) || 200;
+            d.style.height = ph + "px";
+          }
+          Plotly.Plots.resize(d);
+        } catch(e){}
       });
     }, delay));
   }
+
+  // ── Factor Trade Log table ──────────────────────────────────────────────────
+  function _buildFactorTradeLog(tradeLog) {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "overflow:auto;flex-shrink:0;max-height:400px;margin:0 12px 12px;border:1px solid var(--border);border-radius:4px";
+
+    if (!tradeLog || !tradeLog.length) {
+      wrap.innerHTML = '<div style="padding:20px;text-align:center;font-size:10px;color:var(--text-muted)">No trade log data — re-run backtest to generate</div>';
+      return wrap;
+    }
+
+    const SH = 'style="padding:4px 8px;background:var(--bg-panel2);color:var(--text-dim);font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:1"';
+    const S  = 'style="padding:3px 8px;font-size:9px;border-bottom:1px solid var(--border);white-space:nowrap"';
+
+    let html = `<table style="width:100%;border-collapse:collapse;font-size:9px;font-family:'Segoe UI',sans-serif">
+      <thead><tr>
+        <th ${SH}>ENTRY DATE</th>
+        <th ${SH}>SYMBOL</th>
+        <th ${SH}>SECTOR</th>
+        <th ${SH}>SCORE</th>
+        <th ${SH}>MKT CAP ($B)</th>
+        <th ${SH}>EXIT DATE</th>
+        <th ${SH}>RETURN %</th>
+        <th ${SH}>W/L</th>
+      </tr></thead><tbody>`;
+
+    tradeLog.forEach((t, i) => {
+      const ret = t.return_pct;
+      const retColor = ret != null ? (ret >= 0 ? "color:#16a34a" : "color:#dc2626") : "color:var(--text-dim)";
+      const wl = ret != null ? (ret >= 0 ? "W" : "L") : "—";
+      const wlColor = ret != null ? (ret >= 0 ? "color:#16a34a;font-weight:700" : "color:#dc2626;font-weight:700") : "";
+      const bg = i%2===0 ? "background:var(--bg)" : "background:var(--bg-panel)";
+      html += `<tr style="${bg}">
+        <td ${S}>${t.entry_date || "—"}</td>
+        <td ${S} style="font-weight:700;font-family:monospace">${t.symbol || "—"}</td>
+        <td ${S} style="font-size:8px;color:var(--text-dim)">${(t.sector||"").replace(" ","<br/>")}</td>
+        <td ${S} style="text-align:right;color:#7c3aed">${t.score != null ? t.score.toFixed(1) : "—"}</td>
+        <td ${S} style="text-align:right">${t.market_cap_B != null ? "$"+t.market_cap_B.toFixed(1)+"B" : "—"}</td>
+        <td ${S}>${t.exit_date || "—"}</td>
+        <td ${S} style="text-align:right;${retColor}">${ret != null ? (ret>=0?"+":"")+ ret.toFixed(2)+"%" : "—"}</td>
+        <td ${S} style="${wlColor};text-align:center">${wl}</td>
+      </tr>`;
+    });
+
+    const wins = tradeLog.filter(t => t.return_pct != null && t.return_pct >= 0).length;
+    const total = tradeLog.filter(t => t.return_pct != null).length;
+    const avgRet = total > 0 ? tradeLog.filter(t=>t.return_pct!=null).reduce((s,t)=>s+t.return_pct,0)/total : 0;
+    html += `<tr style="background:var(--bg-panel2);font-weight:700">
+      <td ${S} colspan="6" style="font-size:9px;color:var(--text-dim)">
+        SUMMARY: ${tradeLog.length} trades | ${total > 0 ? ((wins/total)*100).toFixed(1) : "—"}% win rate | avg return ${avgRet>=0?"+":""}${avgRet.toFixed(2)}%
+      </td>
+      <td ${S} style="text-align:right;color:${avgRet>=0?"#16a34a":"#dc2626"}">${avgRet>=0?"+":""}${avgRet.toFixed(2)}%</td>
+      <td ${S}></td>
+    </tr>`;
+
+    html += "</tbody></table>";
+    wrap.innerHTML = html;
+    return wrap;
+  }
+
+  // ── PDF Export ─────────────────────────────────────────────────────────────
+  async function _flExportPDF(run_id) {
+    const run = _fl_runs.find(r => r.run_id === run_id);
+    if (!run || !run.result) return;
+    _flSetStatus("Generating PDF...");
+    const resp = await fetch("/api/export/pdf", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ run_label: run.run_label, result: run.result, metrics: run.factor_metrics || {} }),
+    }).then(r => r.json()).catch(e => ({ error: String(e) }));
+    if (resp.path) _flSetStatus("PDF saved: " + resp.filename);
+    else _flSetStatus("PDF failed: " + (resp.error || "unknown"));
+  }
+  window.flExportPDF = _flExportPDF;
+
+  // ── PNG / Snap ──────────────────────────────────────────────────────────────
+  async function _flSnapTearsheet(run_id) {
+    _flSetStatus("Capturing screenshot...");
+    const resp = await fetch("/api/snap").then(r => r.json()).catch(() => null);
+    if (resp && resp.path)     _flSetStatus("Screenshot saved: " + (resp.filename || resp.path));
+    else if (resp && resp.img) _flSetStatus("Screenshot captured (base64)");
+    else                       _flSetStatus("Snap failed — check PyWebView window");
+  }
+  window.flSnapTearsheet = _flSnapTearsheet;
+
+  // ── Promote factor model Q1 to Results tab ─────────────────────────────────
+  // Packages Q1 equity curve + metrics as a Results-compatible run entry,
+  // switches to Results tab, and auto-selects the row.
+  window.flPromoteToResults = async function (strategyId) {
+    // Fetch full model from bank
+    _flSetStatus("Promoting " + strategyId + " to Results tab...");
+    const full = await fetch("/api/factor/bank/" + strategyId).then(r=>r.json()).catch(()=>null);
+    if (!full) { _flSetStatus("Error loading " + strategyId); return; }
+
+    function _arr(f) { return Array.isArray(f) ? f : []; }
+    function _obj(f) { return (f && typeof f === "object" && !Array.isArray(f)) ? f : {}; }
+
+    const bm    = _obj(full.bucket_metrics_json);
+    const dates = _arr(full.dates_json);
+    const be    = _obj(full.bucket_equity_json);
+    const annRet= _obj(full.annual_ret_json);
+    const q1m   = _obj(bm["1"]);
+
+    // Build a Results-compatible run object from Q1 data
+    const run_id    = "promoted-" + strategyId;
+    const run_label = (full.run_label || strategyId) + " · Q1";
+
+    // Map factor bucket_metrics to Results metrics shape
+    const metrics = {
+      cagr:             q1m.cagr,
+      sharpe:           q1m.sharpe,
+      max_dd:           q1m.max_dd,
+      sortino:          q1m.sortino,
+      ann_vol:          q1m.ann_vol,
+      calmar:           q1m.calmar,
+      omega:            q1m.omega,
+      surefire_ratio:   q1m.surefire_ratio,
+      win_rate_monthly: q1m.win_rate_monthly,
+      equity_r2:        q1m.equity_r2,
+      profit_factor:    q1m.profit_factor,
+      system_score:     q1m.system_score,
+      lake_ratio:       q1m.lake_ratio,
+      n_periods:        dates.length,
+    };
+
+    // Build equity dates (prepend start)
+    const startDate = dates.length > 0
+      ? new Date(new Date(dates[0]).getTime() - 180*24*60*60*1000).toISOString().slice(0,10)
+      : "2000-01-01";
+    const equityDates = [startDate, ...dates];
+    const q1Equity    = _arr(be["1"]);
+
+    // Annual returns for bar chart [{year, ret}]
+    const annualRetList = _arr(annRet["1"]);
+
+    const result = {
+      status:           "complete",
+      run_label,
+      factor:           "factor-q1",
+      mode:             "quintile",
+      n_periods:        dates.length,
+      portfolio_equity: q1Equity,
+      equity_dates:     equityDates.slice(0, q1Equity.length),
+      bm_equity:        [],
+      bm_metrics:       {},
+      portfolio_metrics: metrics,
+      annual_ret_by_year: annualRetList,
+      // Tag as promoted factor model
+      _promoted_from:   strategyId,
+    };
+
+    // Inject into Results tab _runs array
+    if (typeof _runs !== "undefined") {
+      // Remove any previous promotion of same model
+      const existing = _runs.findIndex(r => r.run_id === run_id);
+      if (existing >= 0) _runs.splice(existing, 1);
+      _runs.unshift({
+        run_id,
+        run_label,
+        status: "complete",
+        cfg: { factor: "factor-q1", model_type: "quintile" },
+        metrics,
+        result,
+      });
+      if (typeof renderTable === "function") renderTable();
+    }
+
+    // Switch to Results tab and select the row
+    if (typeof switchMainTab === "function") switchMainTab("results");
+    setTimeout(function() {
+      if (typeof setActiveRow === "function") setActiveRow(run_id);
+      if (typeof showTearsheet === "function") showTearsheet(run_id);
+    }, 200);
+
+    _flSetStatus("Promoted " + strategyId + " → Results tab as " + run_label);
+  };
 
   // ── CSV Export ──────────────────────────────────────────────────────────────
   window.flExportCSV = async function (run_id) {
@@ -372,87 +606,150 @@
     if (el) el.textContent = msg;
   }
 
-  // ── Load saved models from bank into bottom-left panel ──────────────────────
-  window.flLoadBank = async function () {
-    const body  = document.getElementById("fl-bank-body");
-    const empty = document.getElementById("fl-bank-empty");
-    const count = document.getElementById("fl-bank-count");
-    if (!body) return;
+  // ── Bank row click handler (shared between flLoadBank and cycles_lab resort) ──
+  window.flBankRowClick = async function (m) {
+    function pct(v,d=1) { if(v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
+    function num(v,d=2) { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
+    _flSetStatus("Loading saved model " + m.strategy_id + "...");
+    const full = await fetch("/api/factor/bank/"+m.strategy_id).then(r=>r.json()).catch(()=>null);
+    if (!full) { _flSetStatus("Error loading " + m.strategy_id); return; }
+    // Helper: safely extract parsed JSON field (get_model() already parses them)
+    function _arr(f) { return Array.isArray(f) ? f : []; }
+    function _obj(f) { return (f && typeof f === "object" && !Array.isArray(f)) ? f : {}; }
 
+    const dates        = _arr(full.dates_json);
+    const bucketMetrics= _obj(full.bucket_metrics_json);
+    const icData       = _arr(full.ic_data_json);
+    const bucketEquity = _obj(full.bucket_equity_json);
+    const annualRet    = _obj(full.annual_ret_json);
+    const tort         = _obj(full.tortoriello_json);
+    const univMetrics  = _obj(full.universe_metrics_json);
+    const periodData   = _arr(full.period_data_json);
+    const sectorAttr   = _arr(full.sector_attribution_json);
+    const spyMetrics   = _obj(full.spy_metrics_json);
+    const tradeLog     = _arr(full.trade_log_json);
+    const cfg          = _obj(full.config_json);
+
+    // Reconstruct universe_terminal:
+    // 1. From stored universe_equity (most accurate: final equity × $10K)
+    // 2. From tort data (Q1 terminal_wealth as proxy if available)
+    // 3. Compute from universe CAGR + n_years
+    let univTerminal = null;
+    const univEq = _arr(full.universe_equity_json || full.universe_equity);
+    if (univEq.length > 0) {
+      univTerminal = Math.round(10000 * univEq[univEq.length - 1]);
+    } else if (univMetrics.cagr && univMetrics.n_years) {
+      univTerminal = Math.round(10000 * Math.pow(1 + univMetrics.cagr, univMetrics.n_years));
+    }
+
+    // Build factor_metrics from ALL scalar columns in the bank row (m)
+    // PLUS any additional fields from factor_metrics_json blob (newer models)
+    // Scalar columns always take priority — they are the authoritative source.
+    const fmJson    = _obj(full.factor_metrics_json);  // may be null for old models
+    const fmFromBank = {
+      // Signal quality (scalar columns from DB)
+      ic_mean:              m.ic_mean,
+      ic_std:               m.ic_std,
+      icir:                 m.icir,
+      ic_hit_rate:          m.ic_hit_rate,
+      spearman_rho:         m.spearman_rho,
+      monotonicity_score:   m.monotonicity_score,
+      // Return metrics
+      quintile_spread_cagr: m.quintile_spread_cagr,
+      q1_cagr:              m.q1_cagr,
+      q1_sharpe:            m.q1_sharpe,
+      q1_max_dd:            m.q1_max_dd,
+      q1_calmar:            m.q1_calmar,
+      q1_surefire:          m.q1_surefire,
+      qn_cagr:              m.qn_cagr,
+      qn_sharpe:            m.qn_sharpe,
+      // Fitness scalars (all from DB scalar columns)
+      staircase_score:      m.staircase_score,
+      alpha_win_rate:       m.alpha_win_rate,
+      avg_annual_alpha:     m.avg_annual_alpha,
+      bear_score:           m.bear_score,
+      bull_score:           m.bull_score,
+      downside_capture:     m.downside_capture,
+      alpha_sharpe:         m.alpha_sharpe,
+      obq_fund_score:       m.obq_fund_score,
+      // Meta
+      n_obs:                m.n_obs,
+      n_stocks_avg:         m.n_stocks_avg,
+      n_buckets:            m.n_buckets,
+      hold_months:          m.hold_months,
+      // Merge any extra fields from JSON blob (e.g. per-bucket details)
+      ...fmJson,
+      // Per-bucket CAGR from bucket_metrics_json
+      ...Object.fromEntries(
+        Object.entries(bucketMetrics).map(([b, bm]) => [
+          `q${b}_cagr`,   (bm || {}).cagr
+        ])
+      ),
+      // Re-apply scalar overrides so DB values win over stale JSON
+      staircase_score:      m.staircase_score,
+      obq_fund_score:       m.obq_fund_score,
+      alpha_win_rate:       m.alpha_win_rate,
+      bear_score:           m.bear_score,
+      bull_score:           m.bull_score,
+    };
+
+    const runObj = {
+      run_id: m.strategy_id,
+      run_label: m.run_label || m.strategy_id,
+      status: "complete",
+      factor_metrics: fmFromBank,
+      result: {
+        status: "complete",
+        run_label: m.run_label,
+        dates,
+        buckets: Array.from({length: m.n_buckets || 5}, (_, i) => i + 1),
+        bucket_metrics:       bucketMetrics,
+        ic_data:              icData,
+        bucket_equity:        bucketEquity,
+        annual_ret_by_bucket: annualRet,
+        tortoriello:          tort,
+        universe_metrics:     univMetrics,
+        universe_terminal:    univTerminal,
+        spy_metrics:          spyMetrics,
+        period_data:          periodData,
+        sector_attribution:   sectorAttr,
+        trade_log:            tradeLog,
+        factor_metrics:       fmFromBank,
+        n_obs:       m.n_obs,
+        n_stocks_avg:m.n_stocks_avg,
+        config:      cfg,
+      }
+    };
+    if (!_fl_runs.find(r => r.run_id === m.strategy_id)) {
+      _fl_runs.unshift(runObj);
+      _renderRunsTable();
+    }
+    _fl_active = m.strategy_id;
+    _renderRunsTable();
+    _showTearsheet(m.strategy_id);
+    _flSetStatus("Loaded: " + m.strategy_id + " | ICIR=" + num(m.icir,3) + " | Spread=" + pct(m.quintile_spread_cagr,2));
+  };
+
+  // ── Load saved models from bank ──────────────────────────────────────────────
+  window.flLoadBank = async function () {
+    const empty = document.getElementById("fl-bank-empty");
     const r = await fetch("/api/factor/bank").then(r => r.json()).catch(() => null);
     if (!r || !r.models) {
       if (empty) empty.textContent = "Error loading bank";
       return;
     }
-
     const models = r.models || [];
-    if (count) count.textContent = models.length + " saved";
 
-    if (!models.length) {
-      if (empty) { empty.style.display="block"; empty.textContent = "No saved models yet — run a backtest"; }
-      body.innerHTML = "";
-      return;
+    // Share data with cycles_lab for resort and cycle linking
+    if (typeof flSetBankData  === "function") flSetBankData(models);
+    if (typeof flLinkStratsToCycle === "function") flLinkStratsToCycle(models);
+
+    // Use cycles_lab renderer (handles sort + column layout)
+    const sortEl = document.getElementById("fl-log-sort");
+    const sortKey = sortEl ? sortEl.value : "quintile_spread_cagr";
+    if (typeof flRenderBankRows === "function") {
+      flRenderBankRows(models, sortKey);
     }
-    if (empty) empty.style.display = "none";
-    body.innerHTML = "";
-
-    function pct(v,d=1) { if(v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
-    function num(v,d=2) { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
-
-    models.forEach(m => {
-      const tr = document.createElement("div");
-      tr.className = "fl-tr";
-      tr.style.cssText = "font-size:10px";
-      const spread = m.quintile_spread_cagr;
-      const sCol = spread!=null?(spread>=0.05?"g":spread>=0?"":"r"):"";
-      tr.innerHTML = `
-        <div class="fl-td dim" style="flex:0 0 115px;font-family:monospace;font-size:9px">${(m.strategy_id||"").slice(0,16)}</div>
-        <div class="fl-td ${sCol}" style="flex:0 0 60px">${pct(spread,2)}</div>
-        <div class="fl-td" style="flex:0 0 44px">${num(m.icir,2)}</div>
-        <div class="fl-td" style="flex:0 0 44px">${m.ic_hit_rate!=null?((m.ic_hit_rate)*100).toFixed(0)+"%":"—"}</div>
-        <div class="fl-td ${(m.q1_cagr||0)>=0?"g":"r"}" style="flex:0 0 50px">${pct(m.q1_cagr,1)}</div>
-        <div class="fl-td dim" style="flex:1;font-size:9px">${(m.run_label||"").slice(0,35)}</div>
-      `;
-      // Clicking a saved model loads it into the tearsheet
-      tr.onclick = async () => {
-        document.querySelectorAll("#fl-bank-body .fl-tr").forEach(r => r.classList.remove("active"));
-        tr.classList.add("active");
-        _flSetStatus("Loading saved model " + m.strategy_id + "...");
-        // Fetch full result from bank
-        const full = await fetch("/api/factor/bank/"+m.strategy_id).then(r=>r.json()).catch(()=>null);
-        if (!full) { _flSetStatus("Error loading " + m.strategy_id); return; }
-        // Reconstruct a run object from bank data
-        const runObj = {
-          run_id: m.strategy_id,
-          run_label: m.run_label || m.strategy_id,
-          status: "complete",
-          factor_metrics: m,
-          result: {
-            status: "complete",
-            run_label: m.run_label,
-            dates: [],
-            buckets: Array.from({length:m.n_buckets||5},(_,i)=>i+1),
-            bucket_metrics: typeof full.bucket_metrics_json==="object"?full.bucket_metrics_json:{},
-            ic_data: typeof full.ic_data_json==="object"?full.ic_data_json:[],
-            bucket_equity: typeof full.bucket_equity_json==="object"?full.bucket_equity_json:{},
-            annual_ret_by_bucket: typeof full.annual_ret_json==="object"?full.annual_ret_json:{},
-            factor_metrics: m,
-            n_obs: m.n_obs,
-            n_stocks_avg: m.n_stocks_avg,
-            config: typeof full.config_json==="object"?full.config_json:{},
-          }
-        };
-        if (!_fl_runs.find(r => r.run_id === m.strategy_id)) {
-          _fl_runs.unshift(runObj);
-          _renderRunsTable();
-        }
-        _fl_active = m.strategy_id;
-        _renderRunsTable();
-        if (typeof _showTearsheet === "function") _showTearsheet(m.strategy_id);
-        _flSetStatus("Loaded: " + m.strategy_id + " | ICIR=" + num(m.icir,3) + " | Spread=" + pct(m.quintile_spread_cagr,2));
-      };
-      body.appendChild(tr);
-    });
   };
 
   // Auto-load bank on init

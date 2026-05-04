@@ -15,7 +15,7 @@
     .fl-th:hover { color:var(--accent2); }
     .fl-sort-arrow { font-size:8px; }
     .fl-tbl-body { flex:1; overflow-y:auto; }
-    .fl-tr { display:flex; padding:5px 8px; border-bottom:1px solid var(--border); cursor:pointer; align-items:center; border-left:3px solid transparent; transition:background .1s; }
+    .fl-tr { display:flex; padding:3px 4px 3px 8px; border-bottom:1px solid var(--border); cursor:pointer; align-items:center; border-left:3px solid transparent; transition:background .1s; overflow:visible; }
     .fl-tr:hover { background:var(--bg-panel); }
     .fl-tr.active { border-left-color:var(--accent2); background:var(--bg-panel2); }
     .fl-tr.promoted { border-left-color:#16a34a; }
@@ -89,11 +89,11 @@
     /* ═══════════════════════════════════════════════════════════
        NAV — 4 main tabs
     ═══════════════════════════════════════════════════════════ */
-    #nav { display:flex; background:#0d1b2a; border-bottom:1px solid #1e3a5f; flex-shrink:0; height:42px; align-items:stretch; }
-    .nav-brand { padding:0 16px; display:flex; align-items:center; font-size:11px; font-weight:800; color:#c9a84c; letter-spacing:2px; flex-shrink:0; border-right:1px solid #1e3a5f; }
-    .main-tab  { flex:0 0 auto; padding:0 24px; border:none; cursor:pointer; background:transparent; color:#64748b; font-size:10px; font-weight:700; letter-spacing:1px; font-family:var(--font); border-bottom:3px solid transparent; transition:all .15s; text-transform:uppercase; }
-    .main-tab:hover  { color:#94a3b8; background:rgba(255,255,255,0.03); }
-    .main-tab.active { color:#ffffff; border-bottom-color:#c9a84c; background:rgba(255,255,255,0.05); }
+    #nav { display:flex; background:var(--bg-panel); border-bottom:2px solid var(--border); flex-shrink:0; height:42px; align-items:stretch; }
+    .nav-brand { padding:0 16px; display:flex; align-items:center; font-size:11px; font-weight:800; color:var(--accent); letter-spacing:2px; flex-shrink:0; border-right:1px solid var(--border); }
+    .main-tab  { flex:0 0 auto; padding:0 24px; border:none; cursor:pointer; background:transparent; color:var(--text-dim); font-size:10px; font-weight:700; letter-spacing:1px; font-family:var(--font); border-bottom:3px solid transparent; transition:all .15s; text-transform:uppercase; }
+    .main-tab:hover  { color:var(--text); background:var(--bg-panel2); }
+    .main-tab.active { color:var(--accent); border-bottom-color:var(--accent); background:var(--bg); }
     .main-tab.tab-factor    .tab-dot { background:#7c3aed; }
     .main-tab.tab-portfolio .tab-dot { background:#0066cc; }
     .main-tab.tab-results   .tab-dot { background:#16a34a; }
@@ -101,9 +101,9 @@
     .main-tab.tab-findings  .tab-dot { background:#06b6d4; }
     .tab-dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:6px; vertical-align:middle; }
     .nav-right { margin-left:auto; display:flex; align-items:center; gap:8px; padding:0 12px; }
-    .nav-util  { background:none; border:1px solid #1e3a5f; color:#64748b; padding:3px 10px; border-radius:3px; cursor:pointer; font-size:9px; font-family:var(--font); }
-    .nav-util:hover { border-color:#c9a84c; color:#c9a84c; }
-    #gpu-badge { font-size:8px; color:#4ade80; background:rgba(74,222,128,0.1); padding:2px 8px; border-radius:10px; border:1px solid rgba(74,222,128,0.3); }
+    .nav-util  { background:none; border:1px solid var(--border); color:var(--text-dim); padding:3px 10px; border-radius:3px; cursor:pointer; font-size:9px; font-family:var(--font); }
+    .nav-util:hover { border-color:var(--accent); color:var(--accent); }
+    #gpu-badge { font-size:8px; color:var(--accent); background:rgba(0,168,143,0.1); padding:2px 8px; border-radius:10px; border:1px solid rgba(0,168,143,0.3); }
 
     /* ═══════════════════════════════════════════════════════════
        TAB VIEWS
@@ -122,6 +122,22 @@
     .tracker-badge.new  { background:#ede9fe; color:#7c3aed; border:1px solid #c4b5fd; }
 
     #nav::-webkit-scrollbar { display:none; }
+
+    /* ── Research Cycle rows ── */
+    .fl-cycle-row { border-bottom:1px solid var(--border); }
+    .fl-cycle-header { display:flex;align-items:center;gap:6px;padding:5px 8px;cursor:pointer;transition:background .1s; }
+    .fl-cycle-header:hover { background:var(--bg-panel); }
+    .fl-cycle-row.active .fl-cycle-header { background:var(--bg-panel2);border-left:3px solid var(--accent2); }
+    .fl-cycle-num  { font-size:9px;font-weight:700;color:var(--accent2);min-width:24px; }
+    .fl-cycle-name { font-size:10px;font-weight:700;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .fl-cycle-date { font-size:8px;color:var(--text-muted);min-width:70px;text-align:right; }
+    .fl-cycle-count{ font-size:8px;color:var(--text-dim);min-width:50px;text-align:right; }
+    .fl-cycle-expand-btn { background:none;border:none;cursor:pointer;color:var(--text-dim);font-size:9px;padding:0 3px;transition:transform .15s;line-height:1; }
+    .fl-cycle-expand-btn.open { transform:rotate(90deg); }
+    .fl-cycle-detail { padding:6px 12px;background:var(--bg);font-size:9px;color:var(--text-dim);line-height:1.7;border-top:1px solid var(--border);white-space:pre-wrap; }
+
+    /* ── Cycle new-form ── */
+    #fl-cycle-new-form { display:none;padding:10px 12px;background:var(--bg-panel);border-bottom:2px solid var(--accent2);flex-shrink:0; }
   </style>
 </head>
 <body data-theme="">
@@ -147,6 +163,9 @@
   <button class="main-tab tab-findings"  onclick="switchMainTab('findings')"  id="tab-btn-findings">
     <span class="tab-dot" style="background:#06b6d4"></span>FINDINGS
   </button>
+  <button class="main-tab tab-wiki" onclick="switchMainTab('wiki')" id="tab-btn-wiki">
+    <span class="tab-dot" style="background:#c9a84c"></span>WIKI
+  </button>
 
   <div class="nav-right">
     <span id="gpu-badge">GPU RTX 3090</span>
@@ -171,7 +190,7 @@
           <option value="jcn_full_composite">JCN Composite</option>
         </select>
       </div>
-      <div class="fld"><label>START</label><input type="date" id="fl-start-date" value="2005-01-31" style="width:120px"/></div>
+      <div class="fld"><label>START</label><input type="date" id="fl-start-date" value="1990-07-31" style="width:120px"/></div>
       <div class="fld"><label>END</label><input type="date" id="fl-end-date" style="width:120px"/></div>
       <div class="fld"><label>BUCKETS</label>
         <select id="fl-n-buckets" style="width:60px">
@@ -214,40 +233,101 @@
 
   <div class="split-view">
     <div class="split-left" id="fl-left-pane" style="width:520px;flex-shrink:0">
-      <div class="fl-tbl-header">
-        <div class="fl-th" style="flex:0 0 28px">ID</div>
-        <div class="fl-th" style="flex:0 0 65px" onclick="flSortBy('quintile_spread_cagr')">SPREAD&#9660;</div>
-        <div class="fl-th" style="flex:0 0 50px" onclick="flSortBy('ic_mean')">IC</div>
-        <div class="fl-th" style="flex:0 0 48px" onclick="flSortBy('icir')">ICIR</div>
-        <div class="fl-th" style="flex:0 0 48px" onclick="flSortBy('ic_hit_rate')">HIT%</div>
-        <div class="fl-th" style="flex:0 0 52px" onclick="flSortBy('monotonicity_score')">MONO%</div>
-        <div class="fl-th" style="flex:0 0 55px" onclick="flSortBy('q1_cagr')">Q1 CAGR</div>
-        <div class="fl-th" style="flex:0 0 48px" onclick="flSortBy('q1_sharpe')">Q1 SH</div>
-        <div class="fl-th" style="flex:1">LABEL</div>
-      </div>
-      <div class="fl-tbl-body" id="fl-tbl-body" style="max-height:40%;min-height:80px">
-        <div class="log-empty" id="fl-tbl-empty">No factor runs yet — configure and click RUN FACTOR</div>
-      </div>
 
-      <!-- Saved bank models (bottom of left pane) -->
-      <div style="padding:5px 10px;background:var(--bg-panel2);border-top:2px solid var(--border);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-        <span style="font-size:8px;font-weight:700;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">SAVED MODELS</span>
-        <div style="display:flex;gap:6px;align-items:center">
-          <span id="fl-bank-count" style="font-size:8px;color:var(--text-muted)">0 saved</span>
-          <button onclick="flLoadBank()" style="font-size:8px;padding:2px 7px;background:var(--bg);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;border-radius:3px">&#8635;</button>
+      <!-- ══ SECTION A: RESEARCH CYCLES ═══════════════════════ -->
+      <div id="fl-cycles-panel" style="flex-shrink:0;border-bottom:2px solid var(--border)">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:var(--bg-panel2);cursor:pointer;user-select:none" onclick="flToggleCyclesPanel()">
+          <span style="font-size:8px;font-weight:700;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">&#128204; RESEARCH CYCLES</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span id="fl-cycles-count" style="font-size:8px;color:var(--text-muted)">0 cycles</span>
+            <button onclick="event.stopPropagation();flNewCycle()" style="font-size:8px;padding:2px 7px;background:var(--accent2);color:#fff;border:none;cursor:pointer;border-radius:3px">+ NEW</button>
+            <span id="fl-cycles-chevron" style="font-size:10px;color:var(--text-dim)">&#9660;</span>
+          </div>
+        </div>
+        <!-- New cycle form -->
+        <div id="fl-cycle-new-form">
+          <div style="font-size:9px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:1px">NEW RESEARCH CYCLE</div>
+          <div style="margin-bottom:5px">
+            <div style="font-size:8px;color:var(--text-dim);margin-bottom:2px;text-transform:uppercase;letter-spacing:.8px">Cycle Name</div>
+            <input id="fl-cycle-name-input" placeholder="e.g. JCN Composite — Mid-Cap Optimization" style="width:100%;padding:4px 7px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:10px;border-radius:3px;font-family:var(--font)"/>
+          </div>
+          <div style="margin-bottom:6px">
+            <div style="font-size:8px;color:var(--text-dim);margin-bottom:2px;text-transform:uppercase;letter-spacing:.8px">Scope / Objective</div>
+            <textarea id="fl-cycle-scope-input" rows="2" placeholder="What are we testing? What's the success criteria?" style="width:100%;padding:4px 7px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:10px;border-radius:3px;font-family:var(--font);resize:vertical"></textarea>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button onclick="flSaveCycle()" style="background:var(--accent2);color:#fff;border:none;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;border-radius:3px">Save Cycle</button>
+            <button onclick="document.getElementById('fl-cycle-new-form').style.display='none'" style="background:var(--bg);border:1px solid var(--border);color:var(--text-dim);padding:4px 10px;font-size:9px;cursor:pointer;border-radius:3px">Cancel</button>
+          </div>
+        </div>
+        <div id="fl-cycles-body" style="overflow-y:auto;max-height:160px">
+          <div id="fl-cycles-empty" class="log-empty">No research cycles yet — click + NEW to start one</div>
         </div>
       </div>
-      <div class="fl-tbl-header" style="background:var(--bg-panel2)">
-        <div class="fl-th" style="flex:0 0 115px;font-size:8px">STRATEGY ID</div>
-        <div class="fl-th" style="flex:0 0 60px;font-size:8px">SPREAD</div>
-        <div class="fl-th" style="flex:0 0 44px;font-size:8px">ICIR</div>
-        <div class="fl-th" style="flex:0 0 44px;font-size:8px">HIT%</div>
-        <div class="fl-th" style="flex:0 0 50px;font-size:8px">Q1 CAGR</div>
-        <div class="fl-th" style="flex:1;font-size:8px">LABEL</div>
+
+      <!-- ══ SECTION B: RESEARCH CYCLES (session runs) ════════════════════ -->
+      <div style="flex-shrink:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 10px;background:var(--bg-panel2);cursor:pointer;user-select:none;border-bottom:1px solid var(--border)" onclick="flToggleRunsPanel()">
+          <span style="font-size:8px;font-weight:700;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">RESEARCH CYCLES</span>
+          <span id="fl-runs-chevron" style="font-size:10px;color:var(--text-dim)">&#9660;</span>
+        </div>
+        <div id="fl-runs-collapse">
+          <div class="fl-tbl-header">
+            <div class="fl-th" style="flex:0 0 65px" onclick="flSortBy('quintile_spread_cagr')">SPREAD&#9660;</div>
+            <div class="fl-th" style="flex:0 0 46px" onclick="flSortBy('icir')">ICIR</div>
+            <div class="fl-th" style="flex:0 0 44px" onclick="flSortBy('ic_hit_rate')">HIT%</div>
+            <div class="fl-th" style="flex:0 0 48px" onclick="flSortBy('monotonicity_score')">MONO%</div>
+            <div class="fl-th" style="flex:0 0 55px" onclick="flSortBy('q1_cagr')">Q1 CAGR</div>
+            <div class="fl-th" style="flex:0 0 46px" onclick="flSortBy('q1_sharpe')">Q1 SH</div>
+            <div class="fl-th" style="flex:1">LABEL</div>
+          </div>
+          <div class="fl-tbl-body" id="fl-tbl-body" style="max-height:140px;min-height:40px">
+            <div class="log-empty" id="fl-tbl-empty">No runs yet — click RUN FACTOR</div>
+          </div>
+        </div>
       </div>
-      <div class="fl-tbl-body" id="fl-bank-body" style="flex:1">
-        <div class="log-empty" id="fl-bank-empty">Loading saved models...</div>
+
+      <!-- ══ SECTION C: STRATEGY LOG ══════════════════════════ -->
+      <div style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:var(--bg-panel2);border-top:2px solid var(--border);flex-shrink:0">
+          <span style="font-size:8px;font-weight:700;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">&#128202; STRATEGY LOG</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span id="fl-bank-count" style="font-size:8px;color:var(--text-muted)">0 saved</span>
+            <select id="fl-log-sort" onchange="flResortLog()" style="font-size:8px;padding:2px 5px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:3px">
+              <option value="icir">ICIR</option>
+              <option value="obq_fund_score">OBQ Fund Score</option>
+              <option value="alpha_win_rate">Alpha Win %</option>
+              <option value="quintile_spread_cagr">Q1-Q5 Spread</option>
+              <option value="staircase_score">Staircase</option>
+              <option value="bear_score">Bear Score</option>
+              <option value="bull_score">Bull Score</option>
+              <option value="q1_calmar">Q1 Calmar</option>
+              <option value="q1_cagr">Q1 CAGR</option>
+              <option value="ic_hit_rate">Hit Rate</option>
+              <option value="monotonicity_score">Monotonicity</option>
+              <option value="date">Most Recent</option>
+            </select>
+            <button onclick="flLoadBank()" style="font-size:8px;padding:2px 7px;background:var(--bg);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;border-radius:3px">&#8635;</button>
+          </div>
+        </div>
+        <div class="fl-tbl-header" style="background:var(--bg-panel2)">
+          <div class="fl-th" style="flex:0 0 140px;font-size:7.5px">STRATEGY ID</div>
+          <div class="fl-th" style="flex:0 0 44px;font-size:7.5px" title="OBQ Fund Score: 30% AlphaWin + 25% AlphaMag + 20% DDProtect + 15% DnCapture + 10% AlphaSharpe (range -1 to 1)">FUND</div>
+          <div class="fl-th" style="flex:0 0 38px;font-size:7.5px" title="Alpha Win Rate % years Q1 > Universe">WIN%</div>
+          <div class="fl-th" style="flex:0 0 46px;font-size:7.5px" title="Q1-Q5 CAGR Spread">SPREAD</div>
+          <div class="fl-th" style="flex:0 0 38px;font-size:7.5px" title="Staircase: avg step Q1-Q5">STAIR</div>
+          <div class="fl-th" style="flex:0 0 36px;font-size:7.5px" title="Bear Market excess return">BEAR</div>
+          <div class="fl-th" style="flex:0 0 36px;font-size:7.5px" title="Bull Market excess return">BULL</div>
+          <div class="fl-th" style="flex:0 0 36px;font-size:7.5px">ICIR</div>
+          <div class="fl-th" style="flex:0 0 36px;font-size:7.5px" title="IC Hit Rate">HIT%</div>
+          <div class="fl-th" style="flex:0 0 38px;font-size:7.5px" title="Q1 Calmar: CAGR×WinMo%/MaxDD">CALM</div>
+          <div class="fl-th" style="flex:0 0 24px;font-size:7.5px"></div>
+        </div>
+        <div class="fl-tbl-body" id="fl-bank-body" style="flex:1">
+          <div class="log-empty" id="fl-bank-empty">Loading saved models...</div>
+        </div>
       </div>
+
     </div>
     <div class="split-divider" id="fl-divider"></div>
     <div class="split-right">
@@ -260,30 +340,137 @@
   </div>
 </div><!-- /#view-factor -->
 
-<!-- ─── TAB 2: PORTFOLIO MODELS (coming soon — stub) ────────────── -->
+<!-- ─── TAB 2: PORTFOLIO MODELS ──────────────────────────────────── -->
 <div class="tab-view" id="view-portfolio">
+
+  <!-- Config bar -->
   <div class="fl-config">
     <div class="fl-config-row">
-      <span style="font-size:13px;font-weight:700;color:var(--text)">Portfolio Models</span>
-      <span style="font-size:10px;color:var(--text-muted);margin-left:8px">— Run a factor model first, then promote it here to build a live Top-N portfolio strategy</span>
+      <div class="fld"><label>SCORE / FACTOR</label>
+        <select id="pm-score-col" style="width:170px">
+          <option value="jcn_full_composite">JCN Composite</option>
+        </select>
+      </div>
+      <div class="fld"><label>TOP N</label>
+        <input type="number" id="pm-top-n" value="20" min="5" max="200" style="width:55px"/>
+      </div>
+      <div class="fld"><label>SECTOR MAX</label>
+        <input type="number" id="pm-sector-max" value="5" min="0" max="50" style="width:55px" title="Max stocks per sector (0=unlimited)"/>
+      </div>
+      <div class="fld"><label>REBALANCE</label>
+        <select id="pm-rebal-freq" style="width:100px">
+          <option value="monthly">Monthly</option>
+          <option value="quarterly" selected>Quarterly</option>
+          <option value="semi-annual">Semi-Annual</option>
+          <option value="annual">Annual</option>
+        </select>
+      </div>
+      <div class="fld"><label>START</label><input type="date" id="pm-start-date" value="1990-07-31" style="width:120px"/></div>
+      <div class="fld"><label>END</label><input type="date" id="pm-end-date" style="width:120px"/></div>
+      <div class="fld"><label>CAP TIER</label>
+        <select id="pm-cap-tier" style="width:80px">
+          <option value="all" selected>All Cap</option>
+          <option value="mega">Mega</option>
+          <option value="large">Large</option>
+          <option value="mid">Mid</option>
+          <option value="small">Small</option>
+          <option value="micro">Micro</option>
+        </select>
+      </div>
+      <div class="fld"><label>MIN $</label><input type="number" id="pm-min-price" value="5" min="0" step="1" style="width:50px"/></div>
+      <div class="fld"><label>COST bps</label><input type="number" id="pm-cost-bps" value="15" min="0" style="width:50px"/></div>
+      <div class="fld"><label>STOP LOSS%</label>
+        <input type="number" id="pm-stop-loss" value="0" min="0" max="100" step="5" style="width:55px" title="0 = disabled"/>
+      </div>
+      <button class="btn-run-fl" id="pm-run-btn" onclick="pmRunBacktest()" style="background:#0066cc">&#9654; RUN PORTFOLIO</button>
     </div>
+    <div id="pm-score-info" style="font-size:9px;color:var(--text-muted);padding-top:2px">Configure and click RUN PORTFOLIO</div>
   </div>
-  <div class="split-view" style="align-items:center;justify-content:center">
-    <div style="text-align:center;padding:60px 40px;color:var(--text-muted)">
-      <div style="font-size:48px;opacity:.15;margin-bottom:20px">&#9783;</div>
-      <div style="font-size:14px;font-weight:700;color:var(--text-dim);margin-bottom:8px">Portfolio Models — Coming Next Sprint</div>
-      <div style="font-size:11px;max-width:380px;line-height:1.7">
-        After running a factor model in <strong>Factor Models</strong>, you'll be able to promote the top quintile into a live Top-N portfolio backtest here with full position sizing, rebalance timing optimization, and technical entry filters.
+  <div class="fl-prog"><div class="fl-prog-fill" id="pm-prog-fill"></div></div>
+  <div class="status-bar" id="pm-status-bar">Configure and click RUN PORTFOLIO</div>
+
+  <div class="split-view">
+    <div class="split-left" id="pm-left-pane" style="width:520px;flex-shrink:0">
+
+      <!-- ══ RESEARCH CYCLES (same as Factor Models) ══════════════ -->
+      <div id="pm-cycles-panel" style="flex-shrink:0;border-bottom:2px solid var(--border)">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:var(--bg-panel2);cursor:pointer;user-select:none" onclick="pmToggleCycles()">
+          <span style="font-size:8px;font-weight:700;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">&#128204; RESEARCH CYCLES</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span id="pm-cycle-badge" style="font-size:8px;color:var(--text-muted)">CYC-001</span>
+            <span id="pm-cycles-chevron" style="font-size:10px;color:var(--text-dim)">&#9660;</span>
+          </div>
+        </div>
+        <div id="pm-cycles-body" style="overflow-y:auto;max-height:160px">
+          <div class="fl-cycle-row active">
+            <div class="fl-cycle-header">
+              <span class="fl-cycle-num">CYC-001</span>
+              <span class="fl-cycle-name">Pre-Calibration &amp; Dry Testing — Portfolio Models</span>
+              <span class="fl-cycle-date">2026-05-01</span>
+              <button class="fl-cycle-expand-btn open" id="pm-cyc001-btn" onclick="pmToggleCycleDetail()">&#9654;</button>
+            </div>
+            <div id="pm-cyc001-detail" style="padding:6px 12px;background:var(--bg);font-size:9px;color:var(--text-dim);line-height:1.7;border-top:1px solid var(--border)">
+              Pre-calibration and dry testing all Portfolio Model templates.<br/>
+              <strong>Strategy:</strong> JCN Composite Top-20 | Quarterly | 5/Sector | 1990-2024 | No Stop<br/>
+              <strong>Objective:</strong> Validate portfolio engine pipeline — confirm market cap distribution, tearsheet accuracy, and GIPS metrics before live optimization cycles.<br/>
+              <strong>Success criteria:</strong> Clean equity curve 1990-2024, all charts populated, GIPS Sharpe/Sortino/Calmar verified.
+            </div>
+          </div>
+        </div>
       </div>
-      <div style="margin-top:24px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;padding:12px 20px;font-size:10px;color:var(--text-dim)">&#9654; Top-N from Q1</div>
-        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;padding:12px 20px;font-size:10px;color:var(--text-dim)">&#9654; Rebalance Optimizer</div>
-        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;padding:12px 20px;font-size:10px;color:var(--text-dim)">&#9654; Technical Filters</div>
-        <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;padding:12px 20px;font-size:10px;color:var(--text-dim)">&#9654; Full Tearsheet</div>
+
+      <!-- ══ THIS SESSION RUNS ═════════════════════════════════════ -->
+      <div style="flex-shrink:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 10px;background:var(--bg-panel2);border-bottom:1px solid var(--border);flex-shrink:0">
+          <span style="font-size:8px;font-weight:700;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">RESEARCH CYCLES</span>
+        </div>
+        <div class="fl-tbl-header">
+          <div class="fl-th" style="flex:0 0 60px">CAGR</div>
+          <div class="fl-th" style="flex:0 0 46px">SHARPE</div>
+          <div class="fl-th" style="flex:0 0 55px">MAX DD</div>
+          <div class="fl-th" style="flex:0 0 46px">WIN%</div>
+          <div class="fl-th" style="flex:0 0 46px">CALM</div>
+          <div class="fl-th" style="flex:1">LABEL</div>
+        </div>
+        <div class="fl-tbl-body" id="pm-tbl-body" style="max-height:120px;min-height:40px">
+          <div class="log-empty" id="pm-tbl-empty">No runs yet — click RUN PORTFOLIO</div>
+        </div>
       </div>
-      <button class="btn-run-fl" onclick="window.switchMainTab('factor')" style="margin-top:28px;background:#7c3aed">
-        &#9664; Go to Factor Models
-      </button>
+
+      <!-- ══ STRATEGY LOG ══════════════════════════════════════════ -->
+      <div style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:var(--bg-panel2);border-top:2px solid var(--border);flex-shrink:0">
+          <span style="font-size:8px;font-weight:700;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">&#128202; STRATEGY LOG</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span id="pm-bank-count" style="font-size:8px;color:var(--text-muted)">0 saved</span>
+            <button onclick="pmLoadBank()" style="font-size:8px;padding:2px 7px;background:var(--bg);border:1px solid var(--border);color:var(--text-dim);cursor:pointer;border-radius:3px">&#8635;</button>
+          </div>
+        </div>
+        <div class="fl-tbl-header" style="background:var(--bg-panel2)">
+          <div class="fl-th" style="flex:0 0 140px;font-size:7.5px">STRATEGY ID</div>
+          <div class="fl-th" style="flex:0 0 55px;font-size:7.5px">CAGR</div>
+          <div class="fl-th" style="flex:0 0 44px;font-size:7.5px">SHRPE</div>
+          <div class="fl-th" style="flex:0 0 52px;font-size:7.5px">MAX DD</div>
+          <div class="fl-th" style="flex:0 0 44px;font-size:7.5px">WIN%</div>
+          <div class="fl-th" style="flex:0 0 44px;font-size:7.5px">CALM</div>
+          <div class="fl-th" style="flex:1;font-size:7.5px">LABEL</div>
+        </div>
+        <div class="fl-tbl-body" id="pm-bank-body" style="flex:1">
+          <div class="log-empty" id="pm-bank-empty">Loading saved portfolios...</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="split-divider" id="pm-divider"></div>
+
+    <!-- Right: tearsheet -->
+    <div class="split-right">
+      <div class="ts-empty" id="pm-ts-empty">
+        <div class="ts-empty-icon">&#128200;</div>
+        <div class="ts-empty-msg">Run a portfolio backtest or click a saved model</div>
+      </div>
+      <div class="ts-content-panel" id="pm-ts-content"></div>
     </div>
   </div>
 </div><!-- /#view-portfolio -->
@@ -322,7 +509,10 @@
       <div class="fld"><label>MIN $</label><input type="number" id="cfg-minprice" value="2" min="0" step="0.5" style="width:55px"/></div>
       <div class="fld"><label>COST bps</label><input type="number" id="cfg-costs" value="15" min="0" style="width:55px"/></div>
       <button class="btn-run-fl" id="run-btn" onclick="startRun()">&#9654; RUN</button>
-      <button class="btn-sm-action" onclick="startSPY()" title="SPY B&H benchmark">&#9654; SPY</button>
+      <button class="btn-sm-action" onclick="startSPY()"  title="S&P 500 benchmark">&#9654; SPY</button>
+      <button class="btn-sm-action" onclick="startBenchmark('QQQ','Nasdaq 100')" title="Nasdaq 100 benchmark" style="color:#7c3aed">&#9654; QQQ</button>
+      <button class="btn-sm-action" onclick="startBenchmark('MDY','S&P 400 Mid-Cap')" title="S&P 400 Mid-Cap benchmark" style="color:#16a34a">&#9654; MDY</button>
+      <button class="btn-sm-action" onclick="startBenchmark('IWM','Russell 2000')" title="Russell 2000 Small-Cap benchmark" style="color:#f59e0b">&#9654; IWM</button>
     </div>
   </div>
   <div class="fl-prog"><div class="fl-prog-fill" id="prog-fill"></div></div>
@@ -514,6 +704,9 @@
   </div>
 </div><!-- /#view-findings -->
 
+<!-- ─── TAB 6: WIKI ────────────────────────────────────────── -->
+<div class="tab-view" id="view-wiki"></div>
+
 </div><!-- /#app-body -->
 
 <!-- ══════════════════════════════════════════════════════════════
@@ -524,9 +717,12 @@
 <script src="/static/js/factor_tearsheet.js"></script>
 <script src="/static/js/app.js"></script>
 <script src="/static/js/factor_lab.js"></script>
+<script src="/static/js/cycles_lab.js"></script>
+<script src="/static/js/portfolio_lab.js"></script>
 <script src="/static/js/results_lab.js"></script>
 <script src="/static/js/tracker_lab.js"></script>
 <script src="/static/js/findings_lab.js"></script>
+<script src="/static/js/wiki_lab.js"></script>
 <script src="/static/js/tabs.js"></script>
 </body>
 </html>
