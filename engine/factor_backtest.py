@@ -124,6 +124,19 @@ SCORE_COLUMNS = {
     "moat_rank":                  "Moat Rank",
 }
 
+# ── CYC-002 factor registry (auto-imported from cyc002_factors.py) ─────────────
+def _load_cyc002_registry():
+    """Load CYC-002 factor definitions and extend SCORE_COLUMNS + SEPARATE_SCORE_TABLES."""
+    try:
+        from engine.cyc002_factors import CYC002_FACTORS, TABLE_DATE_COL
+        for score_col, src_table, src_col, direction, display_name, group in CYC002_FACTORS:
+            # Add to display names
+            SCORE_COLUMNS[score_col] = display_name
+            # Add to separate tables registry (all CYC-002 factors come from PROD_* tables)
+            SEPARATE_SCORE_TABLES[score_col] = (src_table, direction, src_col)
+    except ImportError:
+        pass  # cyc002_factors not yet created — silently skip
+
 # Scores that live in separate tables (not in v_backtest_scores)
 # Map: score_column -> (source_table, score_direction)
 SEPARATE_SCORE_TABLES = {
@@ -136,6 +149,9 @@ SEPARATE_SCORE_TABLES = {
     "moat_score":       ("PROD_MOAT_SCORES",         "higher_better"),
     "moat_rank":        ("PROD_MOAT_SCORES",         "lower_better"),
 }
+
+# Load CYC-002 factors AFTER SEPARATE_SCORE_TABLES is defined
+_load_cyc002_registry()
 
 
 # ── Main backtest function ─────────────────────────────────────────────────────
@@ -248,8 +264,7 @@ def _get_rebalance_dates(con, cfg: FactorBacktestConfig) -> list[str]:
 
     # Use the appropriate source table
     if _is_separate_table(cfg.score_column):
-        src_table = SEPARATE_SCORE_TABLES[cfg.score_column][0]
-        score_col = cfg.score_column
+        src_table, _, score_col = _get_separate_table_info(cfg.score_column)
     else:
         src_table = "v_backtest_scores"
         score_col = cfg.score_column
@@ -354,6 +369,20 @@ def _is_separate_table(score_col: str) -> bool:
     return score_col in SEPARATE_SCORE_TABLES
 
 
+def _get_separate_table_info(score_col: str) -> tuple:
+    """
+    Returns (source_table, direction, actual_column_name).
+    Handles both old 2-tuple format and new 3-tuple format from CYC-002.
+    """
+    entry = SEPARATE_SCORE_TABLES.get(score_col)
+    if entry is None:
+        return None, None, score_col
+    if len(entry) == 3:
+        return entry  # (table, direction, col_name)
+    # Old 2-tuple format
+    return entry[0], entry[1], score_col
+
+
 def _load_scores(con, cfg: FactorBacktestConfig, rebal_dates: list[str], score_col: str) -> pd.DataFrame:
     """
     Load scores with prefilter applied. Handles both v_backtest_scores
@@ -371,7 +400,8 @@ def _load_scores(con, cfg: FactorBacktestConfig, rebal_dates: list[str], score_c
 
     # Separate-table scores need a special JOIN
     if _is_separate_table(score_col):
-        src_table = SEPARATE_SCORE_TABLES[score_col][0]
+        src_table, _, actual_col = _get_separate_table_info(score_col)
+        score_col = actual_col  # use actual column name in source table
         sql = f"""
         WITH monthly_prices AS (
             SELECT
