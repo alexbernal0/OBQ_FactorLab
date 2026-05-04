@@ -1,218 +1,226 @@
-# OBQ Factor Lab — Session Handoff
-**Date:** 2026-04-30  
+# OBQ FactorLab — Session Handoff
+**Date:** 2026-05-03  
 **Repo:** github.com/alexbernal0/OBQ_FactorLab  
-**Latest commit:** 2742bdf  
+**Latest commit:** 4276c27 (v3.0)  
 **App location:** `C:\Users\admin\Desktop\OBQ_AI\OBQ_FactorLab\`  
-**Launch:** Double-click `OBQ FactorLab.lnk` on Desktop
+**Launch:** `C:\Users\admin\Desktop\.venv-obq\Scripts\python.exe main.py`  
+**Port:** 5744
 
 ---
 
-## What Was Built This Session
+## App State — 6-Tab GUI
 
-### App Architecture (5-Tab GUI)
-
-| Tab | Purpose | Status |
+| Tab | Status | Notes |
 |---|---|---|
-| **FACTOR MODELS** | Run quintile factor backtests, assess results, view saved bank models | ✅ Working |
-| **PORTFOLIO MODELS** | Top-N portfolio optimizer (factor → live strategy) | 🔨 Stub — next sprint |
-| **RESULTS** | Strategy backtests (SPY B&H + factor-driven Top-N) | ✅ Working |
-| **TRACKER** | Live production positions, daily rebalance report | 🔨 Stub — next sprint |
-| **FINDINGS** | Research journal — log cycle intelligence | ✅ Working |
-
-**Flow:**
-```
-FACTOR MODELS → [assess] → FINDINGS (log learnings)
-              → [promote] → RESULTS
-RESULTS       → [activate] → TRACKER
-```
+| **FACTOR MODELS** | ✅ Working | 38 models, R3000 EW universe benchmark |
+| **PORTFOLIO MODELS** | ✅ Working | 32 models, SPX benchmark, full tearsheet |
+| **RESULTS** | ✅ Working | SPY + QQQ/MDY/IWM benchmark buttons |
+| **TRACKER** | Stub | Not yet built |
+| **FINDINGS** | ✅ Working | 10+ findings incl. CYC-001 closure |
+| **WIKI** | ✅ Working | 30 entries, 7 parts, searchable |
 
 ---
 
-## Key Files
+## Database Files (D:\OBQ_AI\)
 
-### Engine
-| File | Purpose |
-|---|---|
-| `engine/factor_backtest.py` | Quintile backtest engine — 5-layer pipeline (Universe→Prefilter→Score→Rank→Metrics) |
-| `engine/metrics.py` | 80+ metrics including OBQ Surefire Suite, Tortoriello metrics, DSR, MinTRL |
-| `engine/spy_backtest.py` | SPY B&H benchmark (loads from PROD_EOD_ETFs) |
-| `engine/strategy_bank.py` | DuckDB strategy bank — saves FM-xxx IDs |
-| `engine/data.py` | Data loader for existing factor strategy backtest |
-| `engine/backtest.py` | Existing strategy backtest engine (Top-N, quintile bins) |
-
-### GUI
-| File | Purpose |
-|---|---|
-| `gui/static/index.html` | 5-tab layout, all CSS vars for theming |
-| `gui/static/js/tabs.js` | Tab switcher — owns theme, dividers, DOMContentLoaded |
-| `gui/static/js/factor_lab.js` | Factor Models tab — run/poll/render, bank load |
-| `gui/static/js/factor_tearsheet.js` | Quintile charts (Plotly) + Tortoriello tables |
-| `gui/static/js/results_lab.js` | Results tab — saved bank models list |
-| `gui/static/js/tracker_lab.js` | Tracker tab — positions, rebalance |
-| `gui/static/js/findings_lab.js` | Findings journal — save/expand/filter/export |
-| `gui/static/js/tearsheet.js` | Strategy tearsheet charts (Plotly, SPY etc) |
-| `gui/static/js/app.js` | Strategy backtest runs table + SPY auto-load |
-| `gui/static/css/app.css` | Theme vars (light/:root, dark, night) |
-| `gui/app.py` | Flask backend — all API routes |
-| `main.py` | PyWebView launcher, 1600×960 |
-
----
-
-## Data Layer
-
-### MotherDuck / Local DuckDB
-**Mirror DB:** `D:/OBQ_AI/obq_eodhd_mirror.duckdb`
-
-| Table | Content | Rows |
+| File | Purpose | Size |
 |---|---|---|
-| `v_backtest_scores` | PIT OBQ scores (16 factors), monthly | 859K |
-| `v_backtest_prices` | Daily OHLCV + mktcap | 73.7M |
-| `v_backtest_universe` | OBQ investable universe membership | 81K |
-| `PROD_JCN_Composite_Scores` | JCN + composites | 1.05M |
-| `PROD_EOD_ETFs` | ETF prices (SPY etc) | — |
+| `obq_eodhd_mirror.duckdb` | Main data (v_backtest_scores, v_backtest_prices, PROD_*) | Large |
+| `OBQ_FactorLab_Bank/factor_strategy_bank.duckdb` | Factor model bank (38 models) | Medium |
+| `OBQ_FactorLab_Bank/portfolio_strategy_bank.duckdb` | Portfolio model bank (32 models) | Medium |
+| `OBQ_FactorLab_Bank/trade_log.duckdb` | Dedicated trade log DB | 165K factor + 48K portfolio entries |
+| `OBQ_FactorLab_Bank/findings.json` | Research findings journal | 10+ entries |
 
-**Strategy Bank:** `D:/OBQ_AI/OBQ_FactorLab_Bank/factor_strategy_bank.duckdb`  
-**Findings:** `D:/OBQ_AI/OBQ_FactorLab_Bank/findings.json`
+---
 
-### Score Columns Available (16 total)
+## CYC-001 Results Summary
+
+**Universe:** Large-Cap ($10B+), ~Top-1000  
+**Period:** 1990-07-31 → 2024-12-31 (34 years, 69 semi-annual periods)  
+**Benchmark:** S&P 500 Total Return (SPX price + Shiller div pre-1993, SPY post-1993)  
+**Universe benchmark:** Russell 3000 EW from Norgate PROD_Sector_Index_Membership (PIT, 12.28% CAGR)
+
+### Top Factor Signals (ICIR)
+| Rank | Score | ICIR | Staircase | Notes |
+|---|---|---|---|---|
+| 1 | JCN Alpha Trifecta | 1.489 | +2.6% | Value+Quality+Momentum |
+| 2 | JCN QARP | 1.486 | +8.0% | Best fundable |
+| 3 | Fundsmith Rank | 1.436 | +17.0% | Best staircase |
+| 4 | JCN Composite | 1.432 | +1.5% | All-factor blend |
+| 5 | Quality (Universe) | 1.363 | +5.2% | Best spread +17.4% |
+
+### Top Portfolio Models (Sharpe)
+| Rank | Score | CAGR | Sharpe | MaxDD |
+|---|---|---|---|---|
+| 1 | JCN QARP | 16.1% | **0.830** | -23.4% |
+| 2 | JCN GARP | 17.2% | 0.819 | -29.4% |
+| 3 | Value (Universe) | 14.7% | 0.819 | -21.2% |
+| 4 | Pure Value | 13.3% | 0.751 | **-11.3%** |
+| 5 | JCN Composite | 16.2% | 0.718 | -26.7% |
+*SPX baseline: CAGR 10.57%, Sharpe 0.446*
+
+---
+
+## Key Technical Decisions Made
+
+### Metrics (GIPS-Compliant)
+- **Sharpe:** `(CAGR - rf) / ann_vol` — CAGR in numerator (was arithmetic mean, now fixed)
+- **Sortino:** `(CAGR - rf) / std(neg_returns) × √ppy` — std not RMS (was wrong, now fixed)  
+- **Calmar GIPS:** `CAGR / |MaxDD|`
+- **Calmar OBQ:** `CAGR × WinMo% / |MaxDD|` — proprietary, labeled separately
+
+### Benchmarks
+- **SPX:** `engine/spx_backtest.py` — auto-routes from `run_spy_backtest()` when start < 1993
+  - Pre-1993: SPX price return + Shiller historical dividend yields (3.67%, 2.95%, 2.81%)
+  - Post-1993: SPY adjusted_close total return
+- **Russell 3000 EW:** `PROD_Sector_Index_Membership.in_russell_3000` from Norgate
+  - Used as universe benchmark in factor tearsheets (12.28% CAGR — harder to beat than SPX)
+  - Loaded via `_load_russell3000_universe_returns()` in `factor_backtest.py`
+
+### Staircase Score Formula
 ```
-jcn_full_composite, jcn_qarp, jcn_garp, jcn_quality_momentum,
-jcn_value_momentum, jcn_growth_quality_momentum, jcn_fortress,
-value_score, quality_score, growth_score, finstr_score,
-momentum_score, momentum_af_score, momentum_fip_score,
-moat_score, moat_rank
+Staircase = (Q1-Q5 spread) × Monotonicity × (1/(1+CV×0.5)) × Q1_best_penalty
+```
+- Spread: Q1_CAGR - Q5_CAGR
+- Monotonicity: fraction of steps where Q_i > Q_{i+1}
+- Uniformity: soft CV penalty (never zeros out)
+- Q1_best_penalty: = 1.0 if Q1 is top bucket, else Q1/max(Qi) — hard penalizes inversions
+
+### OBQ Fund Score Formula
+```
+Fund = 0.30×AlphaWin + 0.25×tanh(AvgAlpha/5%) + 0.20×DDProtect + 0.15×DnCapture + 0.10×tanh(AlphaSharpe)
+```
+All components vs **SPX total return** (not EW universe)
+
+### Trade Log Architecture
+- `engine/trade_log_db.py` — dedicated `trade_log.duckdb`
+- `factor_trades` table: symbol, sector, score, return%, market_cap per Q1 stock per period
+- `portfolio_trades` table: same + weight, entry/exit price
+- API: `/api/trades/factor/{sid}`, `/api/trades/portfolio/{sid}`, `/api/trades/count`
+- Bug was fixed: `Symbol` vs `symbol` column case issue in factor engine
+
+---
+
+## Next Session: CYC-002 Priorities
+
+### PLANNED (in order)
+1. **CYC-002: Multi-factor blend optimization**
+   - Hypothesis: QARP + Quality + Value combination outperforms any single factor
+   - Target: Sharpe > 0.9, Alpha Win Rate > 60%
+   - Test all pairwise + trifecta combinations of top-5 factors
+
+2. **Portfolio Models tearsheet sidebar**
+   - Add tearsheet rendering when clicking strategy in Strategy Log (like Factor Models)
+   - Already built the pattern in portfolio_lab.js — just needs wiring to bank click
+
+3. **Factor tearsheet sidebar on Strategy Bank window**
+   - Click strategy in bank → full tearsheet renders in right panel
+   - Same pattern as portfolio_lab.js `_showPmTearsheet()`
+
+4. **CYC-003: Mid-cap momentum test**
+   - Hypothesis: Momentum revives in mid-cap ($2B-$10B)
+   - All 4 momentum variants dead in large-cap (ICIR < 0.01-0.74)
+
+5. **Remaining Batch 3 / additional scores**
+   - Some Batch 3 models had DB lock errors — may need rerun
+   - LongEQ rank results TBD
+
+### DEFERRED (post-CYC-002)
+- CYC-004: Sector-neutral backtests
+- CYC-005: Stop-loss optimization (15%, 20%, 25% on QARP)
+- Tracker tab build-out
+- Results tab: 4 benchmark buttons fully wired (HTML done, app.js wired, needs testing)
+
+---
+
+## Engine Architecture
+
+```
+engine/
+  factor_backtest.py     — Quintile factor backtest (R3000 universe benchmark)
+  portfolio_backtest.py  — Top-N portfolio backtest (SPX benchmark)
+  strategy_bank.py       — Factor model bank (DuckDB, FM-xxx IDs)
+  portfolio_bank.py      — Portfolio model bank (DuckDB, PM-xxx IDs)
+  trade_log_db.py        — Dedicated trade log DB (factor_trades, portfolio_trades)
+  spy_backtest.py        — SPX/SPY benchmark (auto-routes pre-1993 to SPX splice)
+  spx_backtest.py        — Pre-1993 SPX splice with Shiller dividend yields
+  metrics.py             — GIPS-compliant metrics (Sharpe, Sortino, Calmar etc.)
+  data.py                — Data loading (legacy, used by Results tab)
+  backtest.py            — Legacy backtest (Results tab)
+```
+
+## GUI Architecture
+
+```
+gui/
+  app.py                 — Flask routes (all /api/* endpoints)
+  static/
+    index.html           — 6-tab layout
+    css/app.css          — Theme vars (light/dark/night)
+    js/
+      tabs.js            — Tab switching, dividers, DOMContentLoaded
+      factor_lab.js      — Factor Models tab (runs, bank, tearsheet)
+      factor_tearsheet.js — Factor Plotly charts + Tortoriello tables
+      portfolio_lab.js   — Portfolio Models tab (runs, bank, tearsheet)
+      cycles_lab.js      — Research Cycles panel (localStorage)
+      wiki_lab.js        — WIKI tab (accordion, search)
+      app.js             — Results tab (legacy strategy backtests)
+      tearsheet.js       — Results tearsheet charts
+    data/
+      wiki_data.json     — 30 wiki entries (encyclopaedia)
 ```
 
 ---
 
-## Saved Models in Bank (2 as of session end)
+## Known Issues / Watch List
 
-| Strategy ID | Description | ICIR | Q1-Q5 Spread |
-|---|---|---|---|
-| `FM-JCNFUL-20260430-C9BF` | JCN 5Q 6mo All-Cap 2005-2024 PROD-v1 | 2.347 | 6.30% |
-| `FM-JCNFUL-20260430-96BB` | JCN 5Q 6mo All-Cap 2010-2024 | 2.347 | 12.55% |
+1. **Wiki tab overlay** — Fixed in wiki_lab.js (inner wrapper pattern). If it breaks again, ensure `view-wiki` outer div display is controlled only by tabs.js `active` class — wiki_lab.js should NEVER set `outer.style.display`.
 
-**Best ICIR:** 2.347 | **Best Spread:** 12.55% CAGR
+2. **DB lock conflicts** — `obq_eodhd_mirror.duckdb` is used by OBQ_ADE pipeline (PID ~47248+48804). If backtests fail with "cannot open file", wait for ADE pipeline to finish or kill those PIDs.
 
----
+3. **Factor trade logs** — 28/31 CYC-001 factor models have trade logs in `trade_log.duckdb`. The 3 without (growth_score, rulebreaker_rank, longeq_rank) will populate on next natural rerun. The engine bug (Symbol vs symbol column) is fixed.
 
-## Research Findings Logged (3)
+4. **Russell 3000 coverage** — Early periods (1990-1993) have 186-200 R3000 members (sparse). The fallback (scored-stock EW) fills gaps. By 2000 the table has full ~3000 member coverage.
 
-1. **[FACTOR]** JCN Composite shows monotonic quintile separation 2005-2024 — ICIR 2.35, 100% monotonicity, Strategy FM-JCNFUL-20260430-C9BF
-2. **[FACTOR]** 6mo hold outperforms 3mo — less turnover drag, similar IC — Strategy FM-JCNFUL-20260430-96BB
-3. **[BIAS]** ⚠️ GOTCHA: Volume/ADV filter is NULL in v_backtest_prices — falls back to market_cap proxy. Need to join PROD_EOD_survivorship for real volume
-
----
-
-## What Works Right Now
-
-✅ Launch app → white theme, 5 tabs  
-✅ Factor Models → score dropdown loads → RUN FACTOR → quintile backtest runs in ~11s  
-✅ Factor tearsheet: Tortoriello main table, IC chart, rolling charts, heatmap, sector tables  
-✅ Auto-save to strategy bank with FM-xxx ID  
-✅ Saved models appear in bottom of Factor Models left panel  
-✅ Results tab → SPY B&H auto-loads with full tearsheet  
-✅ Findings tab → log research insights, tag, link to strategy ID, expandable rows  
-✅ CSV / PDF / PNG exports from tearsheet buttons  
-✅ Resizable dividers on all tabs  
-✅ evaljs works for automation (window ref in gui.app._webview_window)  
-✅ Two-pass Plotly resize (300ms draw + 400/800/1500ms resize) — all charts render
-
----
-
-## Known Issues / Next Sprint
-
-### Factor Models
-- [ ] Tortoriello sector tables still need wire-up to tearsheet (code written, not fully connected)
-- [ ] Rolling 3Y chart needs real benchmark (currently universe only)  
-- [ ] Crisis grid: some periods show N/A (9/11 correct, but COVID only has 1 data point at 6mo hold)
-- [ ] Missing: factor value distribution by quintile (what raw factor scores are in each bucket)
-- [ ] Score/Factor dropdown cuts off left edge in some window sizes (config row too wide)
-
-### Portfolio Models Tab
-- [ ] Build the Top-N portfolio backtest from a factor config
-- [ ] Rebalance timing optimizer (month_end vs mid_month vs week4)
-- [ ] Technical filter layer (price > 200MA, RSI etc)
-- [ ] Promote to Results flow
-
-### Results Tab
-- [ ] Add PROMOTE button to strategy tearsheet header → saves to bank as PS-xxx
-- [ ] Side-by-side comparison of multiple runs
-
-### Tracker Tab
-- [ ] Connect to real-time score data for rank refresh
-- [ ] Build rebalance diff engine (what changed since last rebalance)
-- [ ] Email report generator using SMTP
-
-### Findings Tab
-- [ ] Rich text editor instead of textarea
-- [ ] Auto-populate strategy_id when logging from Factor Models
-- [ ] Cycle summary view (group findings by date/sprint)
-- [ ] Search/filter by text content
-
----
-
-## Sprint Proposed Next Session
-
-**Priority 1 — Portfolio Models Tab**
-```
-Factor config → Top-N backtest → optimize rebalance + sizing + tech filter → full tearsheet → promote to Results
-```
-
-**Priority 2 — Factor Tear Sheet completeness**
-```
-Wire Tortoriello sector tables fully
-Add factor value distribution histograms per quintile  
-Add benchmark column (universe) to main table
-```
-
-**Priority 3 — Results → Tracker promote flow**
-
----
-
-## API Routes Reference
-
-```
-GET  /api/factor/scores           — available score columns
-GET  /api/factor/score_range?score=X — date range for a score
-POST /api/factor/run              — launch factor backtest
-GET  /api/factor/status/{id}      — poll status
-GET  /api/factor/stream/{id}      — SSE log stream  
-GET  /api/factor/result/{id}      — get result (includes strategy_id)
-GET  /api/factor/bank             — all saved models
-GET  /api/factor/bank/{id}        — single model full data
-POST /api/factor/bank/{id}/notes  — update notes/tags
-
-GET/POST /api/findings            — get all / save new finding
-DELETE   /api/findings/{id}       — delete finding
-
-POST /api/backtest/run            — strategy backtest
-POST /api/backtest/spy            — SPY benchmark
-GET  /api/backtest/spy_preloaded  — cached SPY result
-POST /api/export/csv              — metrics → Downloads CSV
-POST /api/export/pdf              — 2-page PDF → Downloads
-POST /api/export/image_data       — PNG → Downloads (from JS canvas)
-GET  /api/evaljs                  — run JS in webview (dev tool)
-GET  /api/snap                    — PIL screenshot (dev tool)
-```
+5. **Benchmark buttons** — QQQ/MDY/IWM HTML buttons added to Results tab + app.js `startBenchmark()` wired. Needs testing on fresh session to confirm they load correctly.
 
 ---
 
 ## Launch Commands
 
 ```powershell
-# Launch app (double-click shortcut or run directly)
-C:\Users\admin\Desktop\.venv-obq\Scripts\python.exe main.py
+# Launch FactorLab (don't kill Options Scanner on port 5001)
+Start-Process "C:\Users\admin\Desktop\.venv-obq\Scripts\python.exe" -ArgumentList "main.py" -WorkingDirectory "C:\Users\admin\Desktop\OBQ_AI\OBQ_FactorLab" -WindowStyle Normal
 
-# Run factor backtest via API (Python)
-import urllib.request, json
-resp = json.loads(urllib.request.urlopen(
-    urllib.request.Request('http://127.0.0.1:5744/api/factor/run',
-    json.dumps({'score_column':'jcn_full_composite','n_buckets':5,
-                'start_date':'2005-01-31','end_date':'2024-12-31',
-                'hold_months':6,'min_price':5.0,'rebalance_freq':'semi-annual'}).encode(),
-    {'Content-Type':'application/json'})).read().decode())
+# Check trade DB
+cd C:\Users\admin\Desktop\OBQ_AI\OBQ_FactorLab
+python check_fund_scores.py  # verify all fitness scores populated
+python check_batch_results.py  # show all models ranked
 
-# Query bank
-bank = json.loads(urllib.request.urlopen('http://127.0.0.1:5744/api/factor/bank').read().decode())
+# Run a new backtest manually
+python seed_pm001.py  # re-seeds PM-Cycle-001
+
+# Batch new scores
+python batch_cycle001_baseline.py  # run all 14 CYC-001 factor+portfolio
+
+# Dedup banks
+python dedup_banks.py
+
+# Check trade log DB
+python -c "from engine.trade_log_db import count_trades; print(count_trades())"
 ```
+
+---
+
+## Data Layer — MotherDuck Mirror
+- `v_backtest_scores` — 858K rows, 1990-2026, 22 score columns
+- `v_backtest_prices` — 75K symbols, daily OHLCV + market_cap, 1962-present  
+- `PROD_Sector_Index_Membership` — 2.5M rows, Norgate PIT membership, 1962-2026
+  - `in_sp500` and `in_russell_3000` boolean flags per symbol per month
+- `PROD_OBQ_Investable_Universe` — OBQ reconstitution table
+
+**Data integrity confirmed:**
+- ✅ `adjusted_close` throughout (split/dividend adjusted)
+- ✅ 39% delisted symbols — no survivorship bias
+- ✅ PIT scores — no look-ahead
+- ✅ Per-stock return cap [-95%, +300%] applied
