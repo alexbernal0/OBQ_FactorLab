@@ -23,7 +23,6 @@ CYC002_FACTORS = [
     ("cyc2_roa",            "PROD_OBQ_Quality_Scores",   "roa",              "higher_better", "ROA",                           "A_Profitability"),
     ("cyc2_gpa",            "PROD_OBQ_Quality_Scores",   "gpa",              "higher_better", "GPA (Novy-Marx)",               "A_Profitability"),
     ("cyc2_op_margin",      "PROD_OBQ_Quality_Scores",   "op_margin",        "higher_better", "Operating Margin",              "A_Profitability"),
-    ("cyc2_profit_margin",  "PROD_OBQ_Quality_Scores",   "fcf_margin",       "higher_better", "FCF Margin",                    "A_Profitability"),
     ("cyc2_fcf_margin",     "PROD_OBQ_Quality_Scores",   "fcf_margin",       "higher_better", "FCF Margin",                    "A_Profitability"),
     ("cyc2_gross_margin",   "PROD_OBQ_Quality_Scores",   "gross_margin",     "higher_better", "Gross Margin",                  "A_Profitability"),
     ("cyc2_earn_quality",   "PROD_OBQ_Quality_Scores",   "earnings_quality", "higher_better", "Earnings Quality",              "A_Profitability"),
