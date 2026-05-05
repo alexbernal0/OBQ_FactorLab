@@ -83,6 +83,17 @@ SEPARATE_SCORE_TABLES_PM = {
     "moat_rank":        ("PROD_MOAT_SCORES",       "lower_better"),
 }
 
+# Auto-load CYC-002 factors into portfolio engine registry
+def _load_cyc002_pm():
+    try:
+        from engine.cyc002_factors import CYC002_FACTORS
+        for score_col, src_table, src_col, direction, display_name, group in CYC002_FACTORS:
+            SEPARATE_SCORE_TABLES_PM[score_col] = (src_table, direction, src_col)
+    except ImportError:
+        pass
+
+_load_cyc002_pm()
+
 
 @dataclass
 class PortfolioBacktestConfig:
@@ -172,13 +183,22 @@ def run_portfolio_backtest(cfg: PortfolioBacktestConfig, cb=None) -> dict:
             months_sql = ",".join(str(m) for m in sorted(rebal_months))
             month_filter = f"AND MONTH(month_date) IN ({months_sql})"
 
-        src_tbl = SEPARATE_SCORE_TABLES_PM.get(cfg.score_column, (None,))[0] or "v_backtest_scores"
+        # Resolve actual column name for separate-table scores (cyc2_* IDs differ from actual col)
+        _sep_entry = SEPARATE_SCORE_TABLES_PM.get(cfg.score_column)
+        if _sep_entry:
+            src_tbl = _sep_entry[0]
+            # 3-tuple = (table, direction, actual_col) from CYC-002; 2-tuple = old format
+            _actual_col = _sep_entry[2] if len(_sep_entry) == 3 else cfg.score_column
+        else:
+            src_tbl = "v_backtest_scores"
+            _actual_col = cfg.score_column
+
         dates_rows = con.execute(f"""
             SELECT DISTINCT month_date::VARCHAR as d
             FROM {src_tbl}
             WHERE month_date >= '{cfg.start_date}'::DATE
               AND month_date <= '{cfg.end_date}'::DATE
-              AND {cfg.score_column} IS NOT NULL
+              AND {_actual_col} IS NOT NULL
               {month_filter}
             ORDER BY d
         """).fetchall()
@@ -201,17 +221,30 @@ def run_portfolio_backtest(cfg: PortfolioBacktestConfig, cb=None) -> dict:
 
         is_sep = cfg.score_column in SEPARATE_SCORE_TABLES_PM
         if is_sep:
-            src_table = SEPARATE_SCORE_TABLES_PM[cfg.score_column][0]
-            score_direction = SEPARATE_SCORE_TABLES_PM[cfg.score_column][1]
+            _pm_entry = SEPARATE_SCORE_TABLES_PM[cfg.score_column]
+            src_table = _pm_entry[0]
+            score_direction = _pm_entry[1]
+            _pm_actual_col = _pm_entry[2] if len(_pm_entry) == 3 else cfg.score_column
             if score_direction == "lower_better" and cfg.score_direction == "higher_better":
                 cfg.score_direction = "lower_better"
+            # Detect symbol format from RECENT rows (early rows may use different format)
+            try:
+                _sym_s = con.execute(f"""
+                    SELECT symbol FROM {src_table}
+                    WHERE month_date = (SELECT MAX(month_date) FROM {src_table})
+                    LIMIT 1
+                """).fetchone()
+                _no_us = _sym_s and not str(_sym_s[0]).endswith('.US')
+            except Exception:
+                _no_us = False
+            _sym_expr = "CONCAT(s.symbol, '.US')" if _no_us else "s.symbol"
             score_from = f"""
             FROM {src_table} s
             ASOF JOIN v_backtest_prices p
-              ON s.symbol = p.symbol
+              ON {_sym_expr} = p.symbol
              AND p.price_date <= s.month_date
             LEFT JOIN v_backtest_scores vs
-              ON s.symbol = vs.symbol AND s.month_date = vs.month_date
+              ON {_sym_expr} = vs.symbol AND s.month_date = vs.month_date
             """
             sector_col = "COALESCE(vs.gic_sector, p.gics_sector, 'Unknown')"
         else:
@@ -223,18 +256,21 @@ def run_portfolio_backtest(cfg: PortfolioBacktestConfig, cb=None) -> dict:
             """
             sector_col = "COALESCE(s.gic_sector, p.gics_sector, 'Unknown')"
 
+        # Use resolved actual column name for separate-table scores
+        _score_col_sql = _pm_actual_col if is_sep else cfg.score_column
+
         df = con.execute(f"""
             SELECT
                 s.month_date::VARCHAR as month_date,
                 s.symbol              as symbol,
-                s.{cfg.score_column}  as score,
+                s.{_score_col_sql}    as score,
                 p.adjusted_close      as price,
                 p.market_cap,
                 {sector_col} as gic_sector
             {score_from}
             WHERE s.month_date >= '{dates[0]}'::DATE
               AND s.month_date <= '{dates[-1]}'::DATE
-              AND s.{cfg.score_column} IS NOT NULL
+              AND s.{_score_col_sql} IS NOT NULL
               AND p.adjusted_close >= {cfg.min_price}
               {mktcap_min_clause}
               {cap_hi_clause}
@@ -593,6 +629,287 @@ def _compute_annual_returns(dates, port_eq, bm_eq_unused, spy_eq) -> list:
             "spy_ret":       round(float(s_ret), 4) if s_ret is not None else None,
         })
     return rows
+
+
+def run_combo_portfolio_backtest(
+    combo_id: str,
+    factor_a_id: str,
+    factor_b_id: str,
+    display_name: str,
+    source: str,
+    cfg: "PortfolioBacktestConfig | None" = None,
+    cb=None,
+) -> dict:
+    """
+    Two-factor combo Top-N portfolio backtest using rank-averaging.
+
+    Loads scores for both factors, normalizes each to a 0→1 percentile rank
+    (higher = better regardless of original direction), averages the ranks as
+    the composite score, then runs the standard Top-N portfolio simulation.
+    """
+    from engine.factor_backtest import (
+        _load_scores, _get_rebalance_dates, _get_separate_table_info,
+        _is_separate_table, _resolve_score_column, FactorBacktestConfig,
+        _get_con as _fb_get_con,
+    )
+    from engine.cyc002_factors import CYC002_FACTORS
+    from engine.metrics import compute_all
+
+    if cfg is None:
+        cfg = PortfolioBacktestConfig()
+
+    t0 = time.time()
+
+    def _cb(msg):
+        if cb:
+            try: cb(msg)
+            except: pass
+
+    _factor_map = {s: d for s, _t, _c, d, _n, _g in CYC002_FACTORS}
+
+    def _get_direction(fid: str) -> str:
+        if fid in _factor_map:
+            return _factor_map[fid]
+        if _is_separate_table(fid):
+            return _get_separate_table_info(fid)[1]
+        return "higher_better"
+
+    dir_a = _get_direction(factor_a_id)
+    dir_b = _get_direction(factor_b_id)
+
+    _cb(f"Combo portfolio {combo_id}: {display_name}")
+
+    try:
+        con = _fb_get_con()
+
+        # Build sub-configs for each factor
+        def _mk_cfg(fid, direction):
+            return FactorBacktestConfig(
+                score_column=fid, score_direction=direction,
+                start_date=cfg.start_date, end_date=cfg.end_date,
+                rebalance_freq=cfg.rebalance_freq,
+                min_price=cfg.min_price, max_price=getattr(cfg, "max_price", 10000.0),
+                min_market_cap=cfg.min_market_cap, min_adv_usd=cfg.min_adv_usd,
+                cap_tier=cfg.cap_tier, transaction_cost_bps=cfg.transaction_cost_bps,
+                n_buckets=5, hold_months=getattr(cfg, "hold_months", 6),
+                exclude_sectors=getattr(cfg, "exclude_sectors", []),
+            )
+
+        cfg_a = _mk_cfg(factor_a_id, dir_a)
+        cfg_b = _mk_cfg(factor_b_id, dir_b)
+
+        rebal_dates = _get_rebalance_dates(con, cfg_a)
+        if len(rebal_dates) < 3:
+            rebal_dates = _get_rebalance_dates(con, cfg_b)
+        if len(rebal_dates) < 3:
+            return {"status": "error", "error": f"Not enough dates for combo portfolio {combo_id}"}
+
+        dates = rebal_dates
+        _cb(f"  Dates: {len(dates)} ({dates[0]} → {dates[-1]})")
+
+        # Load scores for both factors
+        df_a = _load_scores(con, cfg_a, dates, _resolve_score_column(factor_a_id))
+        df_b = _load_scores(con, cfg_b, dates, _resolve_score_column(factor_b_id))
+        con.close()
+
+        if df_a.empty or df_b.empty:
+            return {"status": "error", "error": f"Empty scores: A={len(df_a)} B={len(df_b)}"}
+
+        df_a = df_a[["symbol", "month_date", "gic_sector", "score_raw", "price", "market_cap"]].copy()
+        df_b = df_b[["symbol", "month_date", "score_raw"]].copy()
+        df_a = df_a.rename(columns={"score_raw": "score_a"})
+        df_b = df_b.rename(columns={"score_raw": "score_b"})
+
+        df = df_a.merge(df_b, on=["symbol", "month_date"], how="inner")
+        if df.empty:
+            return {"status": "error", "error": f"No overlap between A and B for combo {combo_id}"}
+
+        # Percentile rank — higher always = better
+        def _norm_rank(grp, col, direction):
+            asc = (direction != "lower_better")
+            return grp[col].rank(method="average", ascending=asc, pct=True)
+
+        df["rank_a"] = df.groupby("month_date", group_keys=False).apply(
+            lambda g: _norm_rank(g, "score_a", dir_a)
+        )
+        df["rank_b"] = df.groupby("month_date", group_keys=False).apply(
+            lambda g: _norm_rank(g, "score_b", dir_b)
+        )
+        df["score"] = (df["rank_a"] + df["rank_b"]) / 2.0
+
+        _cb(f"  Merged: {len(df):,} records, {df['symbol'].nunique()} symbols")
+
+        # Build price pivot for return calc (same as standard portfolio engine)
+        price_pivot = df.pivot_table(
+            index="month_date", columns="symbol", values="price", aggfunc="first"
+        )
+
+        cost_per_trade = cfg.transaction_cost_bps / 10000.0
+        top_n = cfg.top_n
+        sector_max = cfg.sector_max
+
+        portfolio_equity = [1.0]
+        equity_dates     = [dates[0]]
+        period_data      = []
+        holdings_log     = []
+        holdings         = {}
+
+        score_groups = {d: grp for d, grp in df.groupby("month_date")}
+
+        for i in range(len(dates) - 1):
+            d_cur  = dates[i]
+            d_next = dates[i + 1]
+
+            month_df = score_groups.get(d_cur)
+            if month_df is None or len(month_df) < top_n:
+                continue
+
+            month_df = month_df.dropna(subset=["score"]).sort_values("score", ascending=False)
+            selected = _select_with_sector_cap(month_df, top_n, sector_max)
+            if len(selected) == 0:
+                continue
+
+            selected_syms = selected["symbol"].tolist()
+            weight = 1.0 / len(selected_syms)
+
+            prev_syms = set(holdings.keys())
+            new_syms  = set(selected_syms)
+            turnover  = (len(prev_syms - new_syms) + len(new_syms - prev_syms)) / max(len(new_syms), 1)
+            cost_drag = turnover * cost_per_trade
+
+            prices_cur  = price_pivot.loc[d_cur]  if d_cur  in price_pivot.index else pd.Series(dtype=float)
+            prices_next = price_pivot.loc[d_next] if d_next in price_pivot.index else pd.Series(dtype=float)
+
+            port_ret_components = []
+            for sym in selected_syms:
+                p0 = prices_cur.get(sym)
+                p1 = prices_next.get(sym)
+                if p0 and p1 and p0 > 0 and p1 > 0:
+                    ret = float(np.clip((p1 - p0) / p0, -0.95, 3.0))
+                    port_ret_components.append(ret * weight)
+
+            if not port_ret_components:
+                continue
+
+            raw_ret = sum(port_ret_components)
+            portfolio_ret = float(np.clip(raw_ret, -0.80, 1.50)) - cost_drag
+
+            portfolio_equity.append(portfolio_equity[-1] * (1 + portfolio_ret))
+            equity_dates.append(d_next)
+
+            hold_detail = [{
+                "symbol": row["symbol"],
+                "score":  round(float(row["score"]), 4),
+                "sector": row.get("gic_sector", "Unknown"),
+                "weight": round(weight, 4),
+                "market_cap": round(float(row["market_cap"]) / 1e9, 3)
+                    if row.get("market_cap") and not pd.isna(row["market_cap"]) else None,
+            } for _, row in selected.iterrows()]
+
+            holdings_log.append({"date": d_cur, "holdings": hold_detail})
+            period_data.append({
+                "date":             d_cur,
+                "next_date":        d_next,
+                "portfolio_return": round(portfolio_ret, 6),
+                "n_stocks":         len(selected_syms),
+                "cost_drag":        round(cost_drag, 6),
+                "turnover_pct":     round(turnover * 100, 1),
+                "top5":             [h["symbol"] for h in hold_detail[:5]],
+            })
+            holdings = {s: prices_next.get(s, 0) for s in selected_syms}
+
+        if not period_data:
+            return {"status": "error", "error": "No valid periods for combo portfolio"}
+
+        _cb(f"  Simulated {len(period_data)} periods")
+
+        ppy = {"monthly": 12, "quarterly": 4, "semi-annual": 2, "annual": 1}.get(
+            cfg.rebalance_freq.lower(), 2
+        )
+
+        port_eq  = np.array(portfolio_equity, dtype=np.float64)
+        port_ret = np.diff(port_eq) / port_eq[:-1]
+
+        # SPY benchmark
+        spy_metrics   = {}
+        spy_equity    = []
+        spy_eq_arr    = None
+        spy_ret_arr   = None
+        try:
+            from engine.spy_backtest import run_spy_backtest
+            spy_result = run_spy_backtest(start_date=equity_dates[0], end_date=equity_dates[-1])
+            if spy_result.get("status") == "complete":
+                spy_metrics    = spy_result.get("portfolio_metrics", {})
+                spy_equity_raw = spy_result.get("portfolio_equity", [])
+                spy_dates_raw  = spy_result.get("equity_dates", [])
+                spy_date_map   = {str(d)[:10]: v for d, v in zip(spy_dates_raw, spy_equity_raw)}
+                sorted_spy_d   = sorted(spy_date_map.keys())
+                spy_eq_res     = []
+                for pd_str in [str(d)[:10] for d in equity_dates]:
+                    cands = [d for d in sorted_spy_d if d <= pd_str]
+                    spy_eq_res.append(spy_date_map[cands[-1]] if cands else spy_date_map[sorted_spy_d[0]])
+                if spy_eq_res and spy_eq_res[0] > 0:
+                    base = spy_eq_res[0]
+                    spy_equity = [round(v / base, 6) for v in spy_eq_res]
+                spy_eq_arr  = np.array(spy_equity, dtype=np.float64) if spy_equity else None
+                spy_ret_arr = np.diff(spy_eq_arr) / spy_eq_arr[:-1] if spy_eq_arr is not None else None
+        except Exception as spy_err:
+            _cb(f"  SPY skipped: {spy_err}")
+
+        portfolio_metrics = compute_all(
+            equity=port_eq, monthly_ret=port_ret,
+            bm_equity=spy_eq_arr, bm_monthly=spy_ret_arr,
+            periods_per_year=ppy,
+            label=f"{display_name} | Top-{top_n} Combo",
+        )
+
+        annual_ret_by_year = _compute_annual_returns(equity_dates, portfolio_equity, [], spy_equity)
+        monthly_heatmap    = _build_monthly_heatmap(equity_dates, port_ret.tolist(), ppy)
+
+        run_label = (
+            f"{display_name} | Top-{top_n} | Semi-Ann | {sector_max}/Sector | "
+            f"Large-Cap | 1990-2024 [CYC-002-COMBO]"
+        )
+
+        elapsed = round(time.time() - t0, 1)
+        _cb(f"  Combo portfolio {combo_id} complete in {elapsed}s")
+
+        return {
+            "status":             "complete",
+            "run_label":          run_label,
+            "score_column":       f"combo_{combo_id}",
+            "config": {
+                "combo_id":    combo_id,
+                "factor_a":    factor_a_id,
+                "factor_b":    factor_b_id,
+                "display":     display_name,
+                "source":      source,
+                "score_column": f"combo_{combo_id}",
+                "top_n":       top_n,
+                "rebalance_freq": cfg.rebalance_freq,
+                "start_date":  cfg.start_date,
+                "end_date":    cfg.end_date,
+                "cap_tier":    cfg.cap_tier,
+                "cost_bps":    cfg.transaction_cost_bps,
+            },
+            "portfolio_equity":    [round(v, 6) for v in portfolio_equity],
+            "bm_equity":           [],
+            "spy_equity":          spy_equity,
+            "equity_dates":        equity_dates,
+            "portfolio_metrics":   portfolio_metrics,
+            "bm_metrics":          {},
+            "spy_metrics":         spy_metrics,
+            "period_data":         period_data,
+            "annual_ret_by_year":  annual_ret_by_year,
+            "monthly_heatmap":     monthly_heatmap,
+            "holdings_log":        holdings_log,
+            "n_periods":           len(period_data),
+            "elapsed_s":           elapsed,
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"status": "error", "error": str(e), "combo_id": combo_id}
 
 
 def _build_monthly_heatmap(dates, period_rets, ppy) -> dict:

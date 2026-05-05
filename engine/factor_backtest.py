@@ -400,9 +400,19 @@ def _load_scores(con, cfg: FactorBacktestConfig, rebal_dates: list[str], score_c
 
     # Separate-table scores need a special JOIN
     if _is_separate_table(score_col):
-        src_table, _, actual_col = _get_separate_table_info(score_col)
-        score_col = actual_col  # use actual column name in source table
-        sql = f"""
+            src_table, _, actual_col = _get_separate_table_info(score_col)
+            score_col = actual_col   # use actual column name in source table
+            # Some tables store symbols WITHOUT .US suffix (e.g. PROD_OBQ_Momentum_Scores)
+            # IMPORTANT: sample from the MOST RECENT date — early rows may use different format
+            _sym_sample = con.execute(f"""
+                SELECT symbol FROM {src_table}
+                WHERE month_date = (SELECT MAX(month_date) FROM {src_table})
+                LIMIT 1
+            """).fetchone()
+            _needs_us_suffix = _sym_sample and not str(_sym_sample[0]).endswith('.US')
+            _sym_join = "CONCAT(sc.symbol, '.US')" if _needs_us_suffix else "sc.symbol"
+
+            sql = f"""
         WITH monthly_prices AS (
             SELECT
                 symbol,
@@ -417,20 +427,20 @@ def _load_scores(con, cfg: FactorBacktestConfig, rebal_dates: list[str], score_c
         ),
         score_data AS (
             SELECT
-                sc.symbol,
+                {_sym_join}                         AS symbol,
                 sc.month_date::VARCHAR              AS month_date,
                 COALESCE(vs.gic_sector, 'Unknown')  AS gic_sector,
                 sc.{score_col}                      AS score_raw,
                 p.close_price                       AS price,
                 p.market_cap
             FROM {src_table} sc
-            -- join price data
+            -- join price data (handle symbol format difference)
             JOIN monthly_prices p
-                ON sc.symbol = p.symbol
+                ON {_sym_join} = p.symbol
                 AND p.month_start = DATE_TRUNC('month', sc.month_date)
-            -- join v_backtest_scores for sector info (LEFT JOIN — sector optional)
+            -- join v_backtest_scores for sector info
             LEFT JOIN v_backtest_scores vs
-                ON sc.symbol = vs.symbol
+                ON {_sym_join} = vs.symbol
                 AND sc.month_date = vs.month_date
             WHERE sc.month_date IN ({dates_sql})
               AND sc.{score_col} IS NOT NULL
@@ -1278,3 +1288,201 @@ def get_score_date_range(score_col: str) -> dict:
         return {"min_date": str(row[0]), "max_date": str(row[1]), "symbols": int(row[2])}
     except Exception as e:
         return {"error": str(e)}
+
+
+# ── Two-Factor Combo Backtest ──────────────────────────────────────────────────
+
+def run_combo_backtest(
+    combo_id: str,
+    factor_a_id: str,
+    factor_b_id: str,
+    display_name: str,
+    source: str,
+    cfg_override: "FactorBacktestConfig | None" = None,
+    cb=None,
+) -> dict:
+    """
+    Two-factor combo backtest using rank-averaging methodology.
+
+    Each factor is percentile-ranked within the universe at each date (0→1, higher=better
+    regardless of the original factor direction).  The composite score is the simple
+    average of the two normalized ranks.  The resulting composite is then fed into the
+    standard quintile bucketing engine with score_direction="higher_better".
+
+    Parameters
+    ----------
+    combo_id       : short label e.g. "T1"
+    factor_a_id    : score_column identifier for factor A (must be in SCORE_COLUMNS or SEPARATE_SCORE_TABLES)
+    factor_b_id    : score_column identifier for factor B
+    display_name   : human-readable combo name
+    source         : attribution e.g. "Tortoriello #1"
+    cfg_override   : optional FactorBacktestConfig — universe/date params copied from here;
+                     score_column / score_direction are overridden by the combo logic.
+    cb             : optional callback(msg) for progress
+    """
+    from engine.cyc002_factors import CYC002_FACTORS
+
+    t0 = time.time()
+
+    def _cb(msg):
+        if cb:
+            try: cb(msg)
+            except: pass
+
+    # Build base config from override or defaults
+    if cfg_override is None:
+        base = FactorBacktestConfig()
+    else:
+        import copy
+        base = copy.copy(cfg_override)
+
+    # Derive direction for each factor from CYC002_FACTORS registry
+    _factor_map = {s: d for s, _t, _c, d, _n, _g in CYC002_FACTORS}
+
+    def _get_direction(fid: str) -> str:
+        if fid in _factor_map:
+            return _factor_map[fid]
+        # Fallback: check SEPARATE_SCORE_TABLES
+        if _is_separate_table(fid):
+            return _get_separate_table_info(fid)[1]
+        return "higher_better"
+
+    dir_a = _get_direction(factor_a_id)
+    dir_b = _get_direction(factor_b_id)
+
+    _cb(f"Combo {combo_id}: {display_name}")
+    _cb(f"  Factor A: {factor_a_id} ({dir_a})")
+    _cb(f"  Factor B: {factor_b_id} ({dir_b})")
+
+    try:
+        con = _get_con()
+
+        # ── 1. Get rebalance dates (use factor A's table as date anchor) ──────────
+        cfg_a = FactorBacktestConfig(
+            score_column=factor_a_id, score_direction=dir_a,
+            start_date=base.start_date, end_date=base.end_date,
+            rebalance_freq=base.rebalance_freq,
+            min_price=base.min_price, max_price=base.max_price,
+            min_market_cap=base.min_market_cap, min_adv_usd=base.min_adv_usd,
+            cap_tier=base.cap_tier, transaction_cost_bps=base.transaction_cost_bps,
+            n_buckets=base.n_buckets, hold_months=base.hold_months,
+            exclude_sectors=base.exclude_sectors,
+        )
+        cfg_b = FactorBacktestConfig(
+            score_column=factor_b_id, score_direction=dir_b,
+            start_date=base.start_date, end_date=base.end_date,
+            rebalance_freq=base.rebalance_freq,
+            min_price=base.min_price, max_price=base.max_price,
+            min_market_cap=base.min_market_cap, min_adv_usd=base.min_adv_usd,
+            cap_tier=base.cap_tier, transaction_cost_bps=base.transaction_cost_bps,
+            n_buckets=base.n_buckets, hold_months=base.hold_months,
+            exclude_sectors=base.exclude_sectors,
+        )
+
+        rebal_dates = _get_rebalance_dates(con, cfg_a)
+        if len(rebal_dates) < 3:
+            # Try factor B dates if A has none (e.g. momentum starts later)
+            rebal_dates = _get_rebalance_dates(con, cfg_b)
+        if len(rebal_dates) < 3:
+            return {"status": "error", "error": f"Not enough rebalance dates for combo {combo_id}"}
+
+        _cb(f"  Rebalance dates: {len(rebal_dates)} ({rebal_dates[0]} → {rebal_dates[-1]})")
+
+        # ── 2. Load scores for both factors ──────────────────────────────────────
+        _cb("  Loading factor A scores...")
+        df_a = _load_scores(con, cfg_a, rebal_dates, _resolve_score_column(factor_a_id))
+        _cb(f"    Factor A: {len(df_a):,} records")
+
+        _cb("  Loading factor B scores...")
+        df_b = _load_scores(con, cfg_b, rebal_dates, _resolve_score_column(factor_b_id))
+        _cb(f"    Factor B: {len(df_b):,} records")
+
+        if df_a.empty or df_b.empty:
+            return {"status": "error", "error": f"Empty scores for combo {combo_id}: A={len(df_a)} B={len(df_b)}"}
+
+        # ── 3. Load forward returns ───────────────────────────────────────────────
+        _cb("  Computing forward returns...")
+        df_fwd = _compute_forward_returns(con, cfg_a, rebal_dates)
+
+        # ── 3b. Russell 3000 universe benchmark ──────────────────────────────────
+        _cb("  Loading R3000 universe...")
+        df_r3000 = _load_russell3000_universe_returns(con, cfg_a, rebal_dates)
+
+        con.close()
+
+        # ── 4. Merge A and B on (symbol, month_date) ─────────────────────────────
+        df_a = df_a[["symbol", "month_date", "gic_sector", "score_raw", "price", "market_cap"]].copy()
+        df_b = df_b[["symbol", "month_date", "score_raw"]].copy()
+        df_a = df_a.rename(columns={"score_raw": "score_a"})
+        df_b = df_b.rename(columns={"score_raw": "score_b"})
+
+        df_merged = df_a.merge(df_b, on=["symbol", "month_date"], how="inner")
+        if df_merged.empty:
+            return {"status": "error", "error": f"No overlapping (symbol, date) between A and B for combo {combo_id}"}
+
+        _cb(f"  Merged universe: {len(df_merged):,} records, {df_merged['month_date'].nunique()} months")
+
+        # ── 5. Percentile-rank each factor within period ──────────────────────────
+        # Normalize so that higher rank = better, regardless of original direction.
+        # lower_better: smaller raw → better stock → rank descending → small gets pct ~1.0
+        # higher_better: larger raw → better stock → rank ascending → large gets pct ~1.0
+        def _norm_rank(grp: pd.DataFrame, col: str, direction: str) -> pd.Series:
+            asc = (direction != "lower_better")
+            return grp[col].rank(method="average", ascending=asc, pct=True)
+
+        df_merged["rank_a"] = df_merged.groupby("month_date", group_keys=False).apply(
+            lambda g: _norm_rank(g, "score_a", dir_a)
+        )
+        df_merged["rank_b"] = df_merged.groupby("month_date", group_keys=False).apply(
+            lambda g: _norm_rank(g, "score_b", dir_b)
+        )
+
+        # ── 6. Composite = average of normalized ranks ────────────────────────────
+        df_merged["score_raw"] = (df_merged["rank_a"] + df_merged["rank_b"]) / 2.0
+
+        # Build the scores df expected by _run_quintile_backtest
+        df_scores_combo = df_merged[["symbol", "month_date", "gic_sector", "score_raw", "price", "market_cap"]].copy()
+
+        # ── 7. Run quintile backtest with composite score ─────────────────────────
+        cfg_combo = FactorBacktestConfig(
+            score_column=f"combo_{combo_id}",
+            score_direction="higher_better",  # ranks are always higher=better
+            start_date=base.start_date, end_date=base.end_date,
+            rebalance_freq=base.rebalance_freq,
+            n_buckets=base.n_buckets, hold_months=base.hold_months,
+            min_price=base.min_price, max_price=base.max_price,
+            min_market_cap=base.min_market_cap, min_adv_usd=base.min_adv_usd,
+            cap_tier=base.cap_tier, transaction_cost_bps=base.transaction_cost_bps,
+            run_label=f"{display_name} | {base.n_buckets}Q | {base.hold_months}mo | Large-Cap | 1990-2024 [CYC-002-COMBO]",
+            exclude_sectors=base.exclude_sectors,
+        )
+
+        _cb(f"  Running quintile backtest for combo {combo_id}...")
+        results = _run_quintile_backtest(df_scores_combo, df_fwd, cfg_combo, rebal_dates, _cb,
+                                          df_r3000=df_r3000)
+
+        elapsed = round(time.time() - t0, 1)
+        results["elapsed_s"]   = elapsed
+        results["status"]      = "complete"
+        results["run_label"]   = cfg_combo.run_label
+        results["score_column"] = cfg_combo.score_column
+        results["config"] = {
+            "combo_id":    combo_id,
+            "factor_a":    factor_a_id,
+            "factor_b":    factor_b_id,
+            "display":     display_name,
+            "source":      source,
+            "score_column": cfg_combo.score_column,
+            "n_buckets":   base.n_buckets,
+            "hold_months": base.hold_months,
+            "start_date":  base.start_date,
+            "end_date":    base.end_date,
+            "cap_tier":    base.cap_tier,
+            "cost_bps":    base.transaction_cost_bps,
+        }
+        _cb(f"Combo {combo_id} complete in {elapsed}s")
+        return results
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"status": "error", "error": str(e), "combo_id": combo_id}
