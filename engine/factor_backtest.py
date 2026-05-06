@@ -849,6 +849,9 @@ def _run_quintile_backtest(
             bucket_metrics=bucket_metrics,
             annual_ret_by_bucket=annual_ret_by_bucket,
             n=n,
+            ic_mean=ic_mean,
+            ic_std=ic_std,
+            ic_hit_rate=ic_hit,
         )
     except Exception as _fit_err:
         _cb(f"Fitness metrics skipped: {_fit_err}")
@@ -1079,6 +1082,9 @@ def _compute_fitness_metrics(
     bucket_metrics: dict,
     annual_ret_by_bucket: dict,
     n: int,
+    ic_mean: float = 0.0,
+    ic_std: float = 1.0,
+    ic_hit_rate: float = 0.5,
 ) -> dict:
     """
     Compute all fitness / ranking metrics for the strategy log.
@@ -1193,18 +1199,60 @@ def _compute_fitness_metrics(
     bear_score, bear_detail = _window_score(BEAR_WINDOWS, dates, q1_rets_list, univ_rets_list)
     bull_score, bull_detail = _window_score(BULL_WINDOWS, dates, q1_rets_list, univ_rets_list)
 
-    # ── 4. OBQ Fund Score ─────────────────────────────────────────────────────
-    # Designed for 2-and-20 fund economics — maximize performance fee consistency.
+    # ── 4. OBQ Master Factor Score ────────────────────────────────────────────
+    # Purpose: rank factor RESEARCH VALUE — which factors are worth using/optimizing?
+    # A high score requires BOTH strong quintile discrimination AND Q1 beating the market.
+    # Factors with inverted quintiles (high ICIR but Q1 underperforms) score LOW.
+    # Factors with clean staircase AND positive Q1 alpha score HIGH.
     #
-    #   30% × Alpha Win Rate        (% years you beat benchmark = fee trigger)
-    #   25% × tanh(avg_alpha/0.05)  (magnitude of alpha, normalized)
-    #   20% × DD Protection         (1 - Q1_MaxDD / Universe_MaxDD, capped 0-1)
-    #   15% × Downside Capture      (1 - downside_capture, so lower capture = higher score)
-    #   10% × Alpha Sharpe          (Sharpe of annual alpha series)
+    # Formula:
+    #   25% × ICIR consistency   — tanh(ICIR / 1.5)
+    #                              Rewards factors that rank stocks reliably every period.
+    #                              Normalized so ICIR=1.5 → ~0.46, ICIR=3.0 → ~0.76
+    #
+    #   25% × Staircase quality  — tanh(staircase_score / 0.10)
+    #                              Rewards clean Q1>Q2>Q3>Q4>Q5 descent.
+    #                              Factors with inverted or flat quintiles score near 0.
+    #
+    #   20% × Alpha Win Rate     — % calendar years Q1 return > universe return (0→1)
+    #                              Rewards reliability: Q1 should beat benchmark consistently.
+    #
+    #   20% × Alpha magnitude    — tanh(avg_annual_alpha / 0.05)
+    #                              Rewards meaningful Q1 outperformance vs universe.
+    #                              avg_alpha = 5% → score ≈ 0.46; 10% → 0.76
+    #
+    #   10% × IC Hit Rate        — (ic_hit_rate - 0.5) × 2, capped -1 to 1
+    #                              50% hit rate = 0 (random), 100% = +1, 0% = -1
 
+    # ICIR component — normalize with tanh so very high ICIR doesn't dominate
+    icir_val = float(ic_mean / max(ic_std, 1e-6)) if ic_std and ic_std > 0 else 0.0
+    icir_component = float(np.tanh(icir_val / 1.5))
+
+    # Staircase component — already computed above; normalize with tanh
+    # staircase_score is in CAGR units (e.g. 0.10 = 10% spread × monotonicity × uniformity)
+    staircase_component = float(np.tanh(staircase_score / 0.10))
+
+    # Alpha win rate — already 0→1, use directly
+    alpha_win_component = float(alpha_win_rate)
+
+    # Alpha magnitude — tanh normalized so 5% avg annual alpha → ~0.46
+    alpha_mag_component = float(np.tanh(avg_annual_alpha / 0.05))
+
+    # IC Hit Rate component — centered at 0.5 (random), scaled to -1→1
+    ic_hit_component = float(np.clip((ic_hit_rate - 0.5) * 2.0, -1.0, 1.0))
+
+    obq_fund_score = float(
+        0.25 * icir_component
+      + 0.25 * staircase_component
+      + 0.20 * alpha_win_component
+      + 0.20 * alpha_mag_component
+      + 0.10 * ic_hit_component
+    )
+    obq_fund_score = round(float(np.clip(obq_fund_score, -1.0, 1.0)), 4)
+
+    # ── Keep legacy metrics for portfolio engine / display purposes ────────────
     q1_max_dd   = abs(bucket_metrics.get("1", {}).get("max_dd", 0.0) or 0.0)
     univ_max_dd = abs(bucket_metrics.get(str(n), {}).get("max_dd", 0.01) or 0.01)
-    # Use universe_rets drawdown if available
     if len(universe_rets) > 1:
         univ_eq = np.cumprod(1 + universe_rets)
         roll_max = np.maximum.accumulate(univ_eq)
@@ -1212,38 +1260,24 @@ def _compute_fitness_metrics(
         univ_max_dd_real = abs(float(dd.min()))
         if univ_max_dd_real > 0:
             univ_max_dd = univ_max_dd_real
-
     dd_protection = float(np.clip(1.0 - (q1_max_dd / max(univ_max_dd, 0.001)), 0.0, 1.0))
 
-    # Downside capture: in bear years, how much of universe loss does Q1 capture?
     bear_years = [yr for yr in common_years if univ_annual.get(yr, 0) < 0]
     if bear_years:
         q1_bear  = np.mean([q1_annual.get(yr, 0)   for yr in bear_years])
         un_bear  = np.mean([univ_annual.get(yr, 0)  for yr in bear_years])
         dn_cap   = float(q1_bear / un_bear) if un_bear != 0 else 1.0
         dn_cap   = float(np.clip(dn_cap, 0.0, 2.0))
-        dn_score = float(np.clip(1.0 - dn_cap, -1.0, 1.0))  # low capture = good
+        dn_score = float(np.clip(1.0 - dn_cap, -1.0, 1.0))
     else:
         dn_cap   = 1.0
         dn_score = 0.0
 
-    # Sharpe of alpha series
     if len(alpha_series) >= 3:
         a_arr = np.array(alpha_series)
         alpha_sharpe = float(a_arr.mean() / a_arr.std()) if a_arr.std() > 0 else 0.0
     else:
         alpha_sharpe = 0.0
-
-    alpha_norm = float(np.tanh(avg_annual_alpha / 0.05))
-
-    obq_fund_score = float(
-        0.30 * alpha_win_rate
-      + 0.25 * alpha_norm
-      + 0.20 * dd_protection
-      + 0.15 * dn_score
-      + 0.10 * np.tanh(alpha_sharpe)  # normalize sharpe to -1..1
-    )
-    obq_fund_score = round(float(np.clip(obq_fund_score, -1.0, 1.0)), 4)
 
     return {
         "staircase_score":  round(staircase_score, 4),
