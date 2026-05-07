@@ -190,6 +190,81 @@ def gpu_factor_backtest(
     }
 
 
+# --- Individual functions called by factor_backtest.py ---
+
+def batch_spearman_ic(df, score_col="score_raw", return_col="fwd_return",
+                      period_col="month_date", lower_better=False, min_stocks=10):
+    """
+    Compute Spearman IC for every period in df using GPU.
+    Returns: (ic_data_list, stats_dict)
+    """
+    import pandas as _pd
+    periods = sorted(df[period_col].unique())
+    scores_list = []
+    returns_list = []
+    period_labels = []
+
+    for d in periods:
+        grp = df[df[period_col] == d].dropna(subset=[score_col, return_col])
+        if len(grp) < min_stocks:
+            continue
+        scores_list.append(grp[score_col].values.astype(np.float64))
+        returns_list.append(grp[return_col].values.astype(np.float64))
+        period_labels.append(d)
+
+    if not period_labels:
+        return [], {"ic_mean": 0, "ic_std": 1, "ic_hit": 0, "used_gpu": False}
+
+    result = gpu_factor_backtest(scores_list, returns_list, n_buckets=5,
+                                 lower_better=lower_better)
+    ic_vals = result["ic_values"]
+    ic_data = [{"date": d, "ic_value": round(float(ic_vals[i]), 4)}
+               for i, d in enumerate(period_labels)
+               if i < len(ic_vals)]
+
+    stats = {"ic_mean": result["ic_mean"], "ic_std": result["ic_std"],
+             "ic_hit": result["ic_hit"], "used_gpu": True}
+    return ic_data, stats
+
+
+def gpu_assign_quintiles(df, score_col="score_raw", period_col="month_date",
+                         n_buckets=5, higher_better=True):
+    """
+    Assign quintile buckets for all periods using GPU.
+    Returns pd.Series aligned with df.index.
+    """
+    import pandas as _pd
+    result = _pd.Series(np.nan, index=df.index)
+    periods = sorted(df[period_col].unique())
+
+    for d in periods:
+        mask = df[period_col] == d
+        grp = df[mask].dropna(subset=[score_col])
+        if len(grp) < n_buckets:
+            continue
+
+        scores = grp[score_col].values.astype(np.float64)
+        n = len(scores)
+
+        # GPU rank
+        s_gpu = cp.asarray(scores)
+        if higher_better:
+            order = cp.argsort(-s_gpu)  # descending: rank 1 = highest
+        else:
+            order = cp.argsort(s_gpu)   # ascending: rank 1 = lowest
+        ranks = cp.empty_like(s_gpu, dtype=cp.float64)
+        ranks[order] = cp.arange(1, n + 1, dtype=cp.float64)
+
+        # NTILE bucket
+        buckets = cp.ceil(ranks / n * n_buckets).astype(cp.int32)
+        buckets = cp.clip(buckets, 1, n_buckets)
+        buckets_np = cp.asnumpy(buckets)
+
+        result.loc[grp.index] = buckets_np.astype(float)
+
+    return result
+
+
 # Benchmark / self-test
 if __name__ == "__main__":
     print(gpu_status())

@@ -570,25 +570,31 @@ def _run_quintile_backtest(
     if df.empty:
         return {"status": "error", "error": "No matched score+return data"}
 
-    # Rank within each period
-    def assign_bucket(grp):
-        if len(grp) < n:
-            return grp.assign(bucket=np.nan)
-        try:
-            if cfg.score_direction == "higher_better":
-                grp = grp.assign(bucket=pd.qcut(-grp["score_raw"], n, labels=False, duplicates="drop") + 1)
-            else:
-                grp = grp.assign(bucket=pd.qcut(grp["score_raw"], n, labels=False, duplicates="drop") + 1)
-        except Exception:
-            # Fallback: rank-based assignment when qcut fails (e.g. gate-count scores with many ties)
-            if cfg.score_direction == "higher_better":
-                ranks = (-grp["score_raw"]).rank(method="first")
-            else:
-                ranks = grp["score_raw"].rank(method="first")
-            grp = grp.assign(bucket=pd.cut(ranks, n, labels=False) + 1)
-        return grp
-
-    df = df.groupby("month_date", group_keys=False).apply(assign_bucket)
+    # Rank within each period — GPU-accelerated via CuPy
+    try:
+        from engine.gpu_factor_engine import gpu_assign_quintiles
+        df["bucket"] = gpu_assign_quintiles(
+            df, score_col="score_raw", period_col="month_date",
+            n_buckets=n, higher_better=(cfg.score_direction == "higher_better")
+        )
+    except Exception:
+        # CPU fallback if GPU unavailable
+        def assign_bucket(grp):
+            if len(grp) < n:
+                return grp.assign(bucket=np.nan)
+            try:
+                if cfg.score_direction == "higher_better":
+                    grp = grp.assign(bucket=pd.qcut(-grp["score_raw"], n, labels=False, duplicates="drop") + 1)
+                else:
+                    grp = grp.assign(bucket=pd.qcut(grp["score_raw"], n, labels=False, duplicates="drop") + 1)
+            except Exception:
+                if cfg.score_direction == "higher_better":
+                    ranks = (-grp["score_raw"]).rank(method="first")
+                else:
+                    ranks = grp["score_raw"].rank(method="first")
+                grp = grp.assign(bucket=pd.cut(ranks, n, labels=False) + 1)
+            return grp
+        df = df.groupby("month_date", group_keys=False).apply(assign_bucket)
     df = df.dropna(subset=["bucket"])
     df["bucket"] = df["bucket"].astype(int)
 
@@ -768,20 +774,30 @@ def _run_quintile_backtest(
         univ_metrics = {}
     universe_terminal = float(10000 * universe_eq[-1]) if len(universe_eq) > 1 else 10000.0
 
-    # IC (Information Coefficient) — Spearman ρ between rank and fwd return per period
+    # IC (Information Coefficient) — GPU-accelerated batch Spearman
     ic_data = []
-    for d in dates:
-        grp = df[df["month_date"] == d].dropna(subset=["score_raw", "fwd_return"])
-        if len(grp) < 10:
-            continue
-        try:
-            from scipy.stats import spearmanr
-            rho, pval = spearmanr(grp["score_raw"], grp["fwd_return"])
-            if cfg.score_direction == "lower_better":
-                rho = -rho
-            ic_data.append({"date": d, "ic_value": round(float(rho), 4)})
-        except Exception:
-            pass
+    try:
+        from engine.gpu_factor_engine import batch_spearman_ic
+        ic_data, _ic_stats = batch_spearman_ic(
+            df, score_col="score_raw", return_col="fwd_return",
+            period_col="month_date",
+            lower_better=(cfg.score_direction == "lower_better"),
+            min_stocks=10,
+        )
+    except Exception:
+        # CPU fallback
+        for d in dates:
+            grp = df[df["month_date"] == d].dropna(subset=["score_raw", "fwd_return"])
+            if len(grp) < 10:
+                continue
+            try:
+                from scipy.stats import spearmanr
+                rho, pval = spearmanr(grp["score_raw"], grp["fwd_return"])
+                if cfg.score_direction == "lower_better":
+                    rho = -rho
+                ic_data.append({"date": d, "ic_value": round(float(rho), 4)})
+            except Exception:
+                pass
 
     # IC metrics
     ic_vals = [x["ic_value"] for x in ic_data if x["ic_value"] is not None]

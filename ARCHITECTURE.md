@@ -101,31 +101,127 @@ capacity (10,496 cores × occupancy).
 
 ## Backtest Engine Architecture
 
-### GPU Factor Backtest Pipeline
+### GPU Batch Pipeline (MANDATORY for CYC-003+)
+
+**The key optimization: PRE-LOAD ALL DATA INTO VRAM ONCE, then iterate factors.**
 
 ```
-CPU: DuckDB query → flatten to arrays → transfer to GPU
-GPU: CUDA kernel (rank, correlate, bucket, aggregate) → single launch
-CPU: read results → compute fitness metrics → save to bank
+Phase 1 — DATA PRE-LOAD (once, ~6 seconds total):
+  CPU: ONE DuckDB query loads ALL scores + ALL prices for ALL periods
+  CPU: Flatten to contiguous arrays (scores_matrix, returns_matrix, valid_mask)
+  GPU: cp.asarray() transfers to VRAM — stays resident for all 326 factor runs
+  
+  Data layout in VRAM (24GB available):
+    returns[n_periods x max_stocks]    float64  ~5.6MB for 374x2500
+    valid_mask[n_periods x max_stocks] uint8    ~0.9MB
+    per_factor_scores[n_periods x max_stocks] float64 ~5.6MB (swapped per factor)
+    dates[n_periods]                   — CPU only (metadata)
+    
+  Total VRAM per factor run: ~12MB. With 24GB available, can cache ALL factor 
+  score columns simultaneously (91 factors x 5.6MB = ~510MB = 2% of VRAM).
+
+Phase 2 — PER-FACTOR GPU COMPUTE (~200ms per factor, ALL on GPU):
+  For each of 326 factor runs:
+    1. Select score column (pointer swap in VRAM, ~0 cost)
+    2. rank_scores:       CuPy argsort per period -> quintile buckets
+    3. spearman_ic:       Pearson correlation of score_ranks x return_ranks
+    4. bucket_returns:    mean return per quintile per period  
+    5. equity_curves:     cumulative product per bucket (cp.cumprod)
+    6. universe_returns:  mean return of all valid stocks per period
+    7. spread:            Q1_equity[-1] vs Q5_equity[-1] -> CAGR difference
+    8. monotonicity:      count(Q[i] > Q[i+1]) / n_steps per period average
+    9. staircase:         spread x monotonicity x step_uniformity
+    10. annual_alpha:     Q1 annual ret - universe annual ret per calendar year
+    11. alpha_win_rate:   count(annual_alpha > 0) / n_years
+    12. bear_bull:        alpha during specific date window subsets
+    13. obq_master_score: 25% ICIR + 25% staircase + 20% alpha_win + 20% alpha_mag + 10% IC_hit
+    
+    ALL above are CuPy vectorized ops or RawKernel — ZERO scipy, ZERO pandas loops.
+
+Phase 3 — CPU SAVE (~5ms per factor):
+  - cp.asnumpy() transfer results back
+  - Format result dict matching existing bank schema
+  - save_factor_model() to DuckDB bank
+  - save_portfolio_model() for Top-20 portfolio
+
+Phase 4 — ESTIMATED TOTAL TIME:
+  Pre-load:    6 seconds
+  326 factors: 326 x 206ms = 67 seconds
+  Save:        326 x 5ms = 1.6 seconds
+  TOTAL:       ~75 seconds for ALL 326 CYC-003 runs
 ```
+
+### Data Pre-load Query (ONE query, ALL data)
+
+```sql
+-- Load all scores + forward returns for the full R3000 universe
+-- Joined at semi-annual dates with 6-month forward returns
+-- Result: ~500K-1M rows covering all periods x all stocks
+SELECT 
+    s.symbol, s.month_date, s.gic_sector,
+    -- ALL score columns loaded simultaneously
+    s.jcn_full_composite, s.jcn_qarp, s.value_score, s.quality_score, ...
+    -- CYC-002 separate table scores joined in
+    q.quality_score_composite, v.value_score_composite, ...
+    -- Forward 6-month return
+    (p_fwd.adj_close / p_cur.adj_close - 1) AS fwd_return,
+    -- Market cap for tier filtering
+    p_cur.market_cap
+FROM v_backtest_scores s
+JOIN prices p_cur ON ...
+JOIN prices p_fwd ON ... (6 months forward)
+LEFT JOIN fund_db.scores.obq_quality_scores q ON ...
+LEFT JOIN fund_db.scores.obq_value_scores v ON ...
+WHERE s.month_date IN (semi_annual_dates)
+```
+
+### GPU Data Layout
+
+All arrays **contiguous, row-major, float64** in VRAM:
+
+```
+scores_all[n_score_columns x n_periods x max_stocks]  -- ALL factor scores pre-loaded
+returns[n_periods x max_stocks]                        -- forward returns (shared across factors)
+valid_mask[n_periods x max_stocks]                     -- uint8 (1=valid, 0=padding)
+n_valid[n_periods]                                     -- int32 stock count per period
+market_cap[n_periods x max_stocks]                     -- for cap-tier filtering on GPU
+sector_ids[n_periods x max_stocks]                     -- int8 GICS sector encoding (for sector analysis)
+```
+
+### Cap-Tier Filtering ON GPU
+
+Instead of running separate DuckDB queries per cap tier, load ALL data once and 
+filter on GPU:
+
+```cuda
+// In kernel: apply cap filter by masking
+if (market_cap[pid * max_stocks + sid] < min_cap) return;  // skip this stock
+if (market_cap[pid * max_stocks + sid] > max_cap) return;
+```
+
+This means 4 cap tiers x 91 factors = 364 runs share the SAME VRAM data.
+Only the cap filter mask changes between tiers.
 
 ### CUDA Kernels Required
 
-1. **`rank_and_correlate`** — For each period: rank scores, rank returns, compute Pearson correlation of ranks (= Spearman IC). Output: IC per period.
+1. **`rank_and_ic`** (existing, verified) — rank scores, compute Spearman IC per period
+2. **`bucket_mean_returns`** (existing, verified) — mean return per bucket per period  
+3. **`equity_curve`** (NEW) — cumulative product of bucket returns -> equity per bucket
+4. **`universe_benchmark`** (NEW) — EW mean return of all valid stocks per period
+5. **`annual_aggregation`** (NEW) — aggregate period returns into calendar year returns
+6. **`fitness_metrics`** (NEW) — staircase, alpha, monotonicity, OBQ Master Score
+7. **`sector_attribution`** (NEW) — mean return per sector per bucket per period
 
-2. **`assign_quintiles`** — For each period: rank scores, assign NTILE(5) bucket. Output: bucket assignment per (period, stock).
+### Implementation File Structure
 
-3. **`bucket_returns`** — For each (period, bucket): compute mean forward return. Output: (n_periods × n_buckets) return matrix.
-
-4. **`equity_curves`** — Cumulative product of bucket returns. Output: equity curve per bucket.
-
-### Data layout for GPU
-
-All arrays are **contiguous, row-major, float64**:
-- `scores[n_periods][max_stocks_per_period]` — factor scores, NaN-padded
-- `returns[n_periods][max_stocks_per_period]` — forward returns, NaN-padded
-- `valid[n_periods][max_stocks_per_period]` — uint8 mask (1=valid, 0=padding)
-- `n_stocks[n_periods]` — actual stock count per period (for rank normalization)
+```
+engine/
+  gpu_factor_engine.py      -- CUDA kernels + CuPy vectorized ops (EXISTS, needs expansion)
+  gpu_data_loader.py        -- DuckDB -> flat arrays -> VRAM pre-loader (NEW)
+  gpu_batch_runner.py        -- iterate 326 factors on pre-loaded VRAM data (NEW)  
+  factor_backtest.py         -- LEGACY CPU engine (keep for reference/fallback)
+  portfolio_backtest.py      -- portfolio simulation (keep CPU for now)
+```
 
 ---
 
