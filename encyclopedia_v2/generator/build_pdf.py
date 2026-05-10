@@ -502,6 +502,13 @@ def main():
         story.extend(_md_to_flowables(ch1_path.read_text(encoding='utf-8'), styles))
         story.append(PageBreak())
 
+    # Sector intelligence summary (before factor chapters, after methodology)
+    sector_summary = ENCYCLOPEDIA_DIR / 'Part_XIV_CYC005_Sector' / 'Chapter_00_Sector_Intelligence_Summary.md'
+    if sector_summary.exists():
+        print("  Adding Sector Intelligence Summary...")
+        story.extend(_md_to_flowables(sector_summary.read_text(encoding='utf-8'), styles))
+        story.append(PageBreak())
+
     # Chapters with part dividers
     current_part = None
     parts_dict = dict(parts_info)
@@ -518,6 +525,24 @@ def main():
             print(f"  Processing chapter {idx}/{total}: {ch_path.name}")
         story.extend(_md_to_flowables(ch_path.read_text(encoding='utf-8'), styles))
         story.append(PageBreak())
+
+    # ── Appendices ────────────────────────────────────────────────────────────
+    appendix_files = [
+        ('Appendix A — Data Universe, Sources & Quality Verification',
+         ENCYCLOPEDIA_DIR / 'Appendix_A_Dataset_and_Sources.md'),
+        ('Appendix B — Full Factor Rankings (All Factors Tested)',
+         ENCYCLOPEDIA_DIR / 'Appendix_B_Full_Factor_Rankings.md'),
+        ('Appendix C — Sector Novel Factor Rankings (CYC-005)',
+         ENCYCLOPEDIA_DIR / 'Part_XIV_CYC005_Sector' / 'Chapter_00b_Sector_Novel_Factor_Rankings.md'),
+    ]
+    for app_title, app_path in appendix_files:
+        if app_path.exists():
+            print(f"  Adding {app_title}...")
+            story.append(Spacer(1, 2.0 * inch))
+            story.append(Paragraph(app_title, styles['part_title']))
+            story.append(PageBreak())
+            story.extend(_md_to_flowables(app_path.read_text(encoding='utf-8'), styles))
+            story.append(PageBreak())
 
     # ── Write PDF ─────────────────────────────────────────────────────────────
     DOWNLOADS.mkdir(parents=True, exist_ok=True)
