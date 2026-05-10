@@ -276,4 +276,23 @@ All three dimensions stored independently per stock per month for post-hoc weigh
 
 ---
 
+## Encyclopedia v2 — Universe Doctrine (CYC-003 onward)
+
+**Default universe is R3000.** All factor analysis assumes R3000-survivorship-bias-free
+PIT membership unless explicitly noted. Large-cap-only views are a SLICE of R3000,
+not a separate universe.
+
+Every factor entry in encyclopedia v2 must report:
+1. **R3000 base case** — performance across the full R3000 universe (the default lens)
+2. **Cap-bin slicing** — `all` / `large` ($10B+) / `mid` ($2B-$10B), sourced from
+   the same `factor_models` rows differing only by `cap_tier`
+3. **Sector slicing** — Q1 vs universe spread per GICS sector, per cap bin
+4. **Bear / bull window decomposition** — already computed in `factor_metrics.bear_score`
+   and `bull_score` — surface in encyclopedia, do not recompute
+
+**No more "large-cap only" pages as the default.** A factor that only works in
+mega-cap is a tagged characteristic, not a hidden assumption.
+
+---
+
 *Last updated: 2026-05-06 | OBQ Factor Research*
