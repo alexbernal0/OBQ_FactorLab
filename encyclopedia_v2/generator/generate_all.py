@@ -299,43 +299,67 @@ def main():
     (OUT_ROOT / 'INDEX.md').write_text('\n'.join(idx_lines), encoding='utf-8')
     print(f"  Wrote {OUT_ROOT / 'INDEX.md'}")
 
-    # ── Top performers leaderboard ────────────────────────────────────────────
+    # ── Top performers leaderboard — ALL cycles, ranked by all-cap OBQ ─────────
+    # Uses same ranking logic as Appendix B so tables match exactly.
     print("\nGenerating Leaderboard.md...")
-    leaderboard = sorted(
-        bundles_meta,
-        key=lambda m: -(load_factor_bundle(m[2])['tiers'].get('all', {}).get('obq_fund_score') or -99)
-    )[:25]
-    lb_lines = [
-        "# Top 25 Factors by OBQ Master Score (R3000 All-Cap)",
-        "",
-        f"*Source: CYC-003-GPU, ranked by OBQ Master Score on the `all` cap tier. "
-        f"This is the encyclopedia v2 default lens.*",
-        "",
-        "| # | Factor | OBQ Master | Staircase | Q1-Q5 Spread | Best Tier | Cap-Sensitivity |",
-        "|---|---|---|---|---|---|---|",
-    ]
-    for i, (part, sort_idx, sc, display) in enumerate(leaderboard, start=1):
+
+    # Load every factor bundle across all cycles (CYC-003, 004, 005)
+    all_factor_bundles = []
+    for part, sort_idx, sc, display in bundles_meta:
         b = load_factor_bundle(sc)
         if not b:
             continue
-        all_t = b['tiers'].get('all', {})
-        obq_vals = {t: b['tiers'].get(t, {}).get('obq_fund_score')
-                    for t in TIER_ORDER if t in b['tiers']}
-        obq_vals_filt = {k: v for k, v in obq_vals.items() if v is not None}
-        if not obq_vals_filt:
+        # Prefer 'all' tier OBQ; fall back to 'R3K-All-Cap' for CYC-005
+        tiers = b['tiers']
+        obq_all  = (tiers.get('all', {}) or {}).get('obq_fund_score')
+        obq_r3k  = (tiers.get('R3K-All-Cap', {}) or {}).get('obq_fund_score')
+        obq_base = obq_all if obq_all is not None else obq_r3k
+        if obq_base is None:
             continue
-        best_t = max(obq_vals_filt, key=obq_vals_filt.get)
-        obq_range = max(obq_vals_filt.values()) - min(obq_vals_filt.values())
-        sens = "Stable" if obq_range < 0.05 else ("Moderate" if obq_range < 0.15 else "High")
-        lb_lines.append(f"| {i} | {display} | "
-                       f"**{all_t.get('obq_fund_score', 0):.3f}** | "
-                       f"{all_t.get('staircase_score', 0):.4f} | "
-                       f"{(all_t.get('quintile_spread_cagr') or 0)*100:+.1f}% | "
-                       f"{best_t.upper()} ({obq_vals_filt[best_t]:.3f}) | "
-                       f"{sens} ({obq_range:.2f}) |")
+        # Best tier across all available
+        all_obqs = {t: (tiers[t] or {}).get('obq_fund_score')
+                    for t in tiers if (tiers[t] or {}).get('obq_fund_score') is not None}
+        best_t   = max(all_obqs, key=all_obqs.get) if all_obqs else 'all'
+        base_rec = tiers.get('all') or tiers.get('R3K-All-Cap') or {}
+        all_factor_bundles.append((sc, display, obq_base, b, base_rec, best_t, all_obqs))
+
+    # Sort by all-cap OBQ descending — same as Appendix B
+    all_factor_bundles.sort(key=lambda x: -(x[2] or -99))
+    top25 = all_factor_bundles[:25]
+
+    lb_lines = [
+        "# Top 25 Factors by OBQ Master Score (R3000 All-Cap)",
+        "",
+        "*Ranked by OBQ Master Score on the `all` cap tier (or R3K-All-Cap for CYC-005 novel factors).*",
+        "*Matches Appendix B ranking exactly — top 25 rows of the complete 139-factor table.*",
+        "",
+        "| # | Factor | OBQ All-Cap | Staircase | ICIR | Q1-Q5 Spread | Q1 CAGR | Alpha Win | Bear | Best Tier | Sensitivity |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for i, (sc, display, obq_base, b, base_rec, best_t, all_obqs) in enumerate(top25, start=1):
+        stair = base_rec.get('staircase_score', 0) or 0
+        icir  = base_rec.get('icir', 0) or 0
+        sprd  = base_rec.get('quintile_spread_cagr')
+        q1c   = base_rec.get('q1_cagr')
+        aw    = base_rec.get('alpha_win_rate')
+        bear  = base_rec.get('bear_score')
+        obq_range = max(all_obqs.values()) - min(all_obqs.values()) if len(all_obqs) >= 2 else 0
+        sens = "Stable" if obq_range < 0.05 else ("Moderate" if obq_range < 0.15 else "Sensitive")
+        best_obq = all_obqs.get(best_t, obq_base)
+
+        def _p(v, d=1, s=False):
+            if v is None: return "—"
+            t = f"{v*100:.{d}f}%"
+            return ("+" + t if v >= 0 else t) if s else t
+
+        lb_lines.append(
+            f"| {i} | **{display}** | **{obq_base:.3f}** | {stair:.4f} | {icir:.3f} | "
+            f"{_p(sprd,1,True)} | {_p(q1c,1,True)} | {_p(aw,0)} | {_p(bear,1,True)} | "
+            f"{best_t} ({best_obq:.3f}) | {sens} |"
+        )
 
     (OUT_ROOT / 'Leaderboard.md').write_text('\n'.join(lb_lines), encoding='utf-8')
-    print(f"  Wrote {OUT_ROOT / 'Leaderboard.md'}")
+    print(f"  Wrote {OUT_ROOT / 'Leaderboard.md'} ({len(top25)} factors)")
 
     print(f"\n{'='*60}")
     print(f"Encyclopedia v2 generation complete")
