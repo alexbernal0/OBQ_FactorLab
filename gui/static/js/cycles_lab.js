@@ -210,17 +210,110 @@
     const count = document.getElementById("fl-bank-count");
     if (!body) return;
 
-    if (count) count.textContent = models.length + " saved";
+    // Cycle filter: reads from dropdown #fl-log-cycle if present
+    const cycleEl    = document.getElementById("fl-log-cycle");
+    const cycleFilter = cycleEl ? cycleEl.value : "all";
 
-    if (!models.length) {
-      body.innerHTML = "";
-      if (empty) { empty.style.display = "block"; empty.textContent = "No saved models yet"; }
+    let filtered = models;
+    if (cycleFilter && cycleFilter !== "all") {
+      filtered = models.filter(m => (m.run_label || "").includes(cycleFilter));
+    }
+
+    if (count) count.textContent = filtered.length + " / " + models.length + " models";
+
+    if (!filtered.length) {
+      body.innerHTML = "<div style='padding:20px;color:var(--text-muted);font-size:11px'>No models match filter</div>";
+      if (empty) empty.style.display = "none";
       return;
     }
     if (empty) empty.style.display = "none";
 
     // Sort
-    const sorted = [...models].sort((a, b) => {
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortKey === "date") {
+        return (b.saved_at || b.strategy_id || "").localeCompare(a.saved_at || a.strategy_id || "");
+      }
+      const av = a[sortKey]; const bv = b[sortKey];
+      if (av == null) return 1; if (bv == null) return -1;
+      return bv - av;
+    });
+
+    function pct2(v,d=1) { if(v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
+    function num2(v,d=2) { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
+
+    // Chunked rendering — prevents UI freeze with 664 rows.
+    // First 150 rows render immediately; the rest append in background chunks.
+    body.innerHTML = "";
+    const CHUNK = 150;
+
+    function _appendChunk(startIdx) {
+      const frag = document.createDocumentFragment();
+      const end   = Math.min(startIdx + CHUNK, sorted.length);
+      for (let ci = startIdx; ci < end; ci++) {
+        const m   = sorted[ci];
+        const tr  = document.createElement("div");
+        tr.className = "fl-tr";
+
+        const spread   = m.quintile_spread_cagr;
+        const fund     = m.obq_fund_score;
+        const alphaWin = m.alpha_win_rate;
+        const stair    = m.staircase_score;
+        const bear     = m.bear_score;
+        const bull     = m.bull_score;
+        const calm     = m.q1_calmar;
+
+        const fundCol  = fund!=null   ? (fund>=0.5?"g":fund>=0.3?"":"r")   : "";
+        const spreadCol= spread!=null ? (spread>=0.06?"g":spread>=0?"":"r") : "";
+        const bearCol  = bear!=null   ? (bear>=0.02?"g":bear>=0?"":"r")    : "";
+        const bullCol  = bull!=null   ? (bull>=0.02?"g":bull>=0?"":"r")    : "";
+        const calmCol  = calm!=null   ? (calm>=0.5?"g":calm>=0.2?"":"r")   : "";
+        const sid      = _esc(m.strategy_id || "");
+
+        tr.innerHTML = `
+          <div class="fl-td dim" style="flex:0 0 140px;font-family:monospace;font-size:8px" title="${_esc(m.strategy_id||"")}">${_esc(m.strategy_id||"")}</div>
+          <div class="fl-td ${fundCol}"  style="flex:0 0 44px;font-weight:700;font-size:8px">${fund!=null?num2(fund,3):"—"}</div>
+          <div class="fl-td ${alphaWin!=null&&alphaWin>=0.6?"g":alphaWin!=null&&alphaWin>=0.5?"":"r"}" style="flex:0 0 38px;font-size:8px">${alphaWin!=null?(alphaWin*100).toFixed(0)+"%":"—"}</div>
+          <div class="fl-td ${spreadCol}" style="flex:0 0 46px;font-size:8px">${pct2(spread,1)}</div>
+          <div class="fl-td ${stair!=null&&stair>=0.02?"g":stair!=null&&stair>=0?"":"r"}" style="flex:0 0 38px;font-size:8px">${stair!=null?pct2(stair,1):"—"}</div>
+          <div class="fl-td ${bearCol}"  style="flex:0 0 36px;font-size:8px">${bear!=null?pct2(bear,1):"—"}</div>
+          <div class="fl-td ${bullCol}"  style="flex:0 0 36px;font-size:8px">${bull!=null?pct2(bull,1):"—"}</div>
+          <div class="fl-td"             style="flex:0 0 36px;font-size:8px">${num2(m.icir,2)}</div>
+          <div class="fl-td"             style="flex:0 0 36px;font-size:8px">${m.ic_hit_rate!=null?((m.ic_hit_rate)*100).toFixed(0)+"%":"—"}</div>
+          <div class="fl-td ${calmCol}" style="flex:0 0 38px;font-size:8px">${calm!=null?num2(calm,2):"—"}</div>
+          <button
+            title="Send Q1 to Results tab for validation"
+            onclick="event.stopPropagation();flPromoteToResults('${sid}')"
+            style="flex:0 0 22px;width:22px;height:18px;margin:0 2px;padding:0;background:var(--accent2);color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:900;line-height:18px;text-align:center;align-self:center"
+          >+</button>
+        `;
+
+        tr.onclick = async () => {
+          document.querySelectorAll("#fl-bank-body .fl-tr").forEach(r => r.classList.remove("active"));
+          tr.classList.add("active");
+          if (typeof flBankRowClick === "function") flBankRowClick(m);
+        };
+        frag.appendChild(tr);
+      }
+      body.appendChild(frag);
+      if (end < sorted.length) {
+        setTimeout(() => _appendChunk(end), 0);  // yield to browser between chunks
+      }
+    }
+
+    _appendChunk(0);
+  }
+
+    if (count) count.textContent = filtered.length + " / " + models.length + " models";
+
+    if (!filtered.length) {
+      body.innerHTML = "";
+      if (empty) { empty.style.display = "block"; empty.textContent = "No models match filter"; }
+      return;
+    }
+    if (empty) empty.style.display = "none";
+
+    // Sort
+    const sorted = [...filtered].sort((a, b) => {
       if (sortKey === "date") {
         return (b.saved_at || b.strategy_id || "").localeCompare(a.saved_at || a.strategy_id || "");
       }
@@ -232,8 +325,42 @@
     function pct(v, d=1) { if (v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
     function num(v, d=2) { if (v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
 
+    // Virtual rendering: only build DOM for first 200 rows immediately,
+    // append the rest in a non-blocking chunk to keep UI responsive with 664 rows.
     body.innerHTML = "";
-    sorted.forEach(m => {
+    const CHUNK = 200;
+
+    function _appendChunk(startIdx) {
+      const frag = document.createDocumentFragment();
+      const end = Math.min(startIdx + CHUNK, sorted.length);
+      for (let ci = startIdx; ci < end; ci++) {
+        const m = sorted[ci];
+        const tr = document.createElement("div");
+        tr.className = "fl-tr";  // rest of row build below uses m
+        _buildBankRow(tr, m, pct, pct, num);
+        frag.appendChild(tr);
+      }
+      body.appendChild(frag);
+      if (end < sorted.length) {
+        // Yield to browser between chunks — prevents UI freeze
+        setTimeout(() => _appendChunk(end), 0);
+      }
+    }
+
+    _appendChunk(0);
+    return; // row building moved to _buildBankRow below
+  }
+
+  function _buildBankRow(tr, m, pct2, pct, num2) {
+    function pct3(v,d=1) { if(v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
+    function num3(v,d=2) { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
+    const sorted = null; // unused in row build
+    // (reassign locals to match original variable names used below)
+    const pct2_ = pct3; const num2_ = num3;
+    // row build continues inline (original forEach body) — see below
+
+    // ─── inline row build (was inside sorted.forEach) ──────────────────────
+    { const m2 = m; // alias for clarity
       const tr = document.createElement("div");
       tr.className = "fl-tr";
 

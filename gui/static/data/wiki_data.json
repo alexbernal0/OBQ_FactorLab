@@ -1131,5 +1131,196 @@
     ],
     "source": "OBQ FactorLab CYC-004-GPU (2026)",
     "content": "## Factor Overview\n\n**Score column:** `cyc4_intangibles_pb` · **Cycle:** CYC-004 (Pure Factor Baseline) · **Best tier:** LARGE\n\n| Metric | All-Cap R3K | Large $10B+ | Mid $2B-$10B |\n|---|---|---|---|\n| **OBQ Master Score** | **0.279** | 0.300 | 0.239 |\n| ICIR | 0.216 | -0.718 | -0.049 |\n| Staircase | 0.0104 | 0.0431 | 0.0133 |\n| Q1-Q5 Spread CAGR | +3.3% | +8.7% | +4.1% |\n| Q1 CAGR | +6.7% | +7.6% | +7.2% |\n| Alpha Win Rate | 60% | 83% | 60% |\n| Bear Score | -2.5% | +14.1% | +1.6% |\n\n## Sector Attribution (Top sectors by Q1-Q5 spread)\n\n- **Communication Services**: Spread +5.1%\n- **Materials**: Spread +5.1%\n- **Information Technology**: Spread +5.1%\n- **Energy**: Spread +4.4%\n- **Utilities**: Spread +4.2%\n\n## Verdict\n\n**OBQ 0.279 = Weak** at R3K all-cap.\nQ1 beat the universe in 60% of calendar years (1995-2024, 42 semi-annual periods).\nBest cap tier: **LARGE** — concentrate exposure in large-cap universe.\n"
+  },
+  {
+    "id": "cyc005-cyc5-energy-midcycle-fcf",
+    "section": "CYC-005 Sector Intelligence",
+    "part": "Part XIV — CYC-005 Sector-Specific Novel Factors",
+    "title": "Energy: Mid-Cycle FCF Yield",
+    "summary": "Useful specialist — OBQ 0.500. Cross-sectional even stronger (0.687). Within-sector OBQ: 0.500, R3K OBQ: 0.687.",
+    "tags": [
+      "cyc5_energy_midcycle_fcf",
+      "CYC-005",
+      "sector-specific",
+      "energy",
+      "strong"
+    ],
+    "source": "OBQ FactorLab CYC-005-GPU (2026)",
+    "content": "## Energy: Mid-Cycle FCF Yield\n\n**Score column:** `cyc5_energy_midcycle_fcf` · **Cycle:** CYC-005b Novel Sector Factor\n\n| Run | OBQ | ICIR | Spread | Bear |\n|---|---|---|---|---|\n| Within-Energy | **0.500** | 0.713 | +9.4% | +10.9% |\n| R3K Cross-Sectional | 0.687 | 1.594 | +10.9% | +14.5% |\n\n## Verdict\nUseful specialist — OBQ 0.500. Cross-sectional even stronger (0.687)\n\n## How to Use in App\nIn the Strategy Log, filter cycle to **CYC-005b** and search for `cyc5_energy_midcycle_fcf` to see the full tearsheet with sector attribution and Tortoriello stats.\n"
+  },
+  {
+    "id": "cyc005-cyc5-materials-ccc",
+    "section": "CYC-005 Sector Intelligence",
+    "part": "Part XIV — CYC-005 Sector-Specific Novel Factors",
+    "title": "Materials: Cash Conversion Cycle",
+    "summary": "INVERTED — OBQ -0.033. Commodity cycle overwhelms metric. Within-sector OBQ: -0.033, R3K OBQ: 0.007.",
+    "tags": [
+      "cyc5_materials_ccc",
+      "CYC-005",
+      "sector-specific",
+      "materials",
+      "inverted"
+    ],
+    "source": "OBQ FactorLab CYC-005-GPU (2026)",
+    "content": "## Materials: Cash Conversion Cycle\n\n**Score column:** `cyc5_materials_ccc` · **Cycle:** CYC-005b Novel Sector Factor\n\n| Run | OBQ | ICIR | Spread | Bear |\n|---|---|---|---|---|\n| Within-Materials | **-0.033** | -0.055 | +0.6% | -3.6% |\n| R3K Cross-Sectional | 0.007 | -0.214 | +1.7% | +5.0% |\n\n## Verdict\nINVERTED — OBQ -0.033. Commodity cycle overwhelms metric\n\n## How to Use in App\nIn the Strategy Log, filter cycle to **CYC-005b** and search for `cyc5_materials_ccc` to see the full tearsheet with sector attribution and Tortoriello stats.\n"
+  },
+  {
+    "id": "cyc005-cyc5-industrials-efficiency",
+    "section": "CYC-005 Sector Intelligence",
+    "part": "Part XIV — CYC-005 Sector-Specific Novel Factors",
+    "title": "Industrials: Efficiency Composite",
+    "summary": "Strong cross-sectionally (OBQ 0.785). Moderate within-sector. Within-sector OBQ: 0.367, R3K OBQ: 0.785.",
+    "tags": [
+      "cyc5_industrials_efficiency",
+      "CYC-005",
+      "sector-specific",
+      "industrials",
+      "moderate"
+    ],
+    "source": "OBQ FactorLab CYC-005-GPU (2026)",
+    "content": "## Industrials: Efficiency Composite\n\n**Score column:** `cyc5_industrials_efficiency` · **Cycle:** CYC-005b Novel Sector Factor\n\n| Run | OBQ | ICIR | Spread | Bear |\n|---|---|---|---|---|\n| Within-Industrials | **0.367** | 0.791 | +11.6% | +9.3% |\n| R3K Cross-Sectional | 0.785 | 1.890 | +17.9% | +11.3% |\n\n## Verdict\nStrong cross-sectionally (OBQ 0.785). Moderate within-sector\n\n## How to Use in App\nIn the Strategy Log, filter cycle to **CYC-005b** and search for `cyc5_industrials_efficiency` to see the full tearsheet with sector attribution and Tortoriello stats.\n"
+  },
+  {
+    "id": "cyc005-cyc5-consumer-disc-brand",
+    "section": "CYC-005 Sector Intelligence",
+    "part": "Part XIV — CYC-005 Sector-Specific Novel Factors",
+    "title": "Consumer Discretionary: Brand-Growth Score",
+    "summary": "Moderate within-sector (0.247). Only meaningful within sector. Within-sector OBQ: 0.247, R3K OBQ: 0.006.",
+    "tags": [
+      "cyc5_consumer_disc_brand",
+      "CYC-005",
+      "sector-specific",
+      "consumer-discretionary",
+      "weak"
+    ],
+    "source": "OBQ FactorLab CYC-005-GPU (2026)",
+    "content": "## Consumer Discretionary: Brand-Growth Score\n\n**Score column:** `cyc5_consumer_disc_brand` · **Cycle:** CYC-005b Novel Sector Factor\n\n| Run | OBQ | ICIR | Spread | Bear |\n|---|---|---|---|---|\n| Within-Consumer Discretionary | **0.247** | 0.238 | +5.1% | +8.2% |\n| R3K Cross-Sectional | 0.006 | 0.090 | +0.4% | -9.0% |\n\n## Verdict\nModerate within-sector (0.247). Only meaningful within sector\n\n## How to Use in App\nIn the Strategy Log, filter cycle to **CYC-005b** and search for `cyc5_consumer_disc_brand` to see the full tearsheet with sector attribution and Tortoriello stats.\n"
+  },
+  {
+    "id": "cyc005-cyc5-staples-div-growth",
+    "section": "CYC-005 Sector Intelligence",
+    "part": "Part XIV — CYC-005 Sector-Specific Novel Factors",
+    "title": "Consumer Staples: Dividend Growth Rate",
+    "summary": "Weak — OBQ 0.132. Market efficiently prices dividend growth. Within-sector OBQ: 0.132, R3K OBQ: 0.143.",
+    "tags": [
+      "cyc5_staples_div_growth",
+      "CYC-005",
+      "sector-specific",
+      "consumer-staples",
+      "weak"
+    ],
+    "source": "OBQ FactorLab CYC-005-GPU (2026)",
+    "content": "## Consumer Staples: Dividend Growth Rate\n\n**Score column:** `cyc5_staples_div_growth` · **Cycle:** CYC-005b Novel Sector Factor\n\n| Run | OBQ | ICIR | Spread | Bear |\n|---|---|---|---|---|\n| Within-Consumer Staples | **0.132** | 0.035 | +1.8% | +1.2% |\n| R3K Cross-Sectional | 0.143 | 0.360 | +0.4% | -0.1% |\n\n## Verdict\nWeak — OBQ 0.132. Market efficiently prices dividend growth\n\n## How to Use in App\nIn the Strategy Log, filter cycle to **CYC-005b** and search for `cyc5_staples_div_growth` to see the full tearsheet with sector attribution and Tortoriello stats.\n"
+  },
+  {
+    "id": "cyc005-cyc5-healthcare-rnd-yield",
+    "section": "CYC-005 Sector Intelligence",
+    "part": "Part XIV — CYC-005 Sector-Specific Novel Factors",
+    "title": "Health Care: R&D Yield",
+    "summary": "STRONG SPECIALIST — OBQ 0.689, +19.2% within-sector spread. Within-sector OBQ: 0.689, R3K OBQ: 0.501.",
+    "tags": [
+      "cyc5_healthcare_rnd_yield",
+      "CYC-005",
+      "sector-specific",
+      "health-care",
+      "strong"
+    ],
+    "source": "OBQ FactorLab CYC-005-GPU (2026)",
+    "content": "## Health Care: R&D Yield\n\n**Score column:** `cyc5_healthcare_rnd_yield` · **Cycle:** CYC-005b Novel Sector Factor\n\n| Run | OBQ | ICIR | Spread | Bear |\n|---|---|---|---|---|\n| Within-Health Care | **0.689** | 1.235 | +19.2% | +12.2% |\n| R3K Cross-Sectional | 0.501 | 1.261 | +8.8% | +7.7% |\n\n## Verdict\nSTRONG SPECIALIST — OBQ 0.689, +19.2% within-sector spread\n\n## How to Use in App\nIn the Strategy Log, filter cycle to **CYC-005b** and search for `cyc5_healthcare_rnd_yield` to see the full tearsheet with sector attribution and Tortoriello stats.\n"
+  },
+  {
+    "id": "cyc005-cyc5-financials-capital",
+    "section": "CYC-005 Sector Intelligence",
+    "part": "Part XIV — CYC-005 Sector-Specific Novel Factors",
+    "title": "Financials: Capital Adequacy",
+    "summary": "INVERTED — OBQ -0.013. Use ROE instead for Financials. Within-sector OBQ: -0.013, R3K OBQ: -0.260.",
+    "tags": [
+      "cyc5_financials_capital",
+      "CYC-005",
+      "sector-specific",
+      "financials",
+      "inverted"
+    ],
+    "source": "OBQ FactorLab CYC-005-GPU (2026)",
+    "content": "## Financials: Capital Adequacy\n\n**Score column:** `cyc5_financials_capital` · **Cycle:** CYC-005b Novel Sector Factor\n\n| Run | OBQ | ICIR | Spread | Bear |\n|---|---|---|---|---|\n| Within-Financials | **-0.013** | -0.259 | -2.5% | -5.5% |\n| R3K Cross-Sectional | -0.260 | -0.921 | -8.4% | -15.5% |\n\n## Verdict\nINVERTED — OBQ -0.013. Use ROE instead for Financials\n\n## How to Use in App\nIn the Strategy Log, filter cycle to **CYC-005b** and search for `cyc5_financials_capital` to see the full tearsheet with sector attribution and Tortoriello stats.\n"
+  },
+  {
+    "id": "cyc005-cyc5-it-rule-of-40",
+    "section": "CYC-005 Sector Intelligence",
+    "part": "Part XIV — CYC-005 Sector-Specific Novel Factors",
+    "title": "Information Technology: Rule of 40",
+    "summary": "Moderate — OBQ 0.322. Confirmed sector-specific thesis. Within-sector OBQ: 0.322, R3K OBQ: 0.190.",
+    "tags": [
+      "cyc5_it_rule_of_40",
+      "CYC-005",
+      "sector-specific",
+      "information-technology",
+      "moderate"
+    ],
+    "source": "OBQ FactorLab CYC-005-GPU (2026)",
+    "content": "## Information Technology: Rule of 40\n\n**Score column:** `cyc5_it_rule_of_40` · **Cycle:** CYC-005b Novel Sector Factor\n\n| Run | OBQ | ICIR | Spread | Bear |\n|---|---|---|---|---|\n| Within-Information Technology | **0.322** | 0.609 | +10.4% | +9.0% |\n| R3K Cross-Sectional | 0.190 | 0.797 | +6.0% | -5.2% |\n\n## Verdict\nModerate — OBQ 0.322. Confirmed sector-specific thesis\n\n## How to Use in App\nIn the Strategy Log, filter cycle to **CYC-005b** and search for `cyc5_it_rule_of_40` to see the full tearsheet with sector attribution and Tortoriello stats.\n"
+  },
+  {
+    "id": "cyc005-cyc5-comms-content-roi",
+    "section": "CYC-005 Sector Intelligence",
+    "part": "Part XIV — CYC-005 Sector-Specific Novel Factors",
+    "title": "Communication Services: Content ROI",
+    "summary": "Moderate — OBQ 0.324 within-sector. Within-sector OBQ: 0.324, R3K OBQ: 0.378.",
+    "tags": [
+      "cyc5_comms_content_roi",
+      "CYC-005",
+      "sector-specific",
+      "communication-services",
+      "moderate"
+    ],
+    "source": "OBQ FactorLab CYC-005-GPU (2026)",
+    "content": "## Communication Services: Content ROI\n\n**Score column:** `cyc5_comms_content_roi` · **Cycle:** CYC-005b Novel Sector Factor\n\n| Run | OBQ | ICIR | Spread | Bear |\n|---|---|---|---|---|\n| Within-Communication Services | **0.324** | 0.575 | +5.5% | +8.3% |\n| R3K Cross-Sectional | 0.378 | 0.873 | +10.9% | +5.2% |\n\n## Verdict\nModerate — OBQ 0.324 within-sector\n\n## How to Use in App\nIn the Strategy Log, filter cycle to **CYC-005b** and search for `cyc5_comms_content_roi` to see the full tearsheet with sector attribution and Tortoriello stats.\n"
+  },
+  {
+    "id": "cyc005-cyc5-utilities-safe-yield",
+    "section": "CYC-005 Sector Intelligence",
+    "part": "Part XIV — CYC-005 Sector-Specific Novel Factors",
+    "title": "Utilities: Safe Dividend Yield",
+    "summary": "INVERTED — OBQ -0.022, Bear score -13.8%. Within-sector OBQ: -0.022, R3K OBQ: 0.012.",
+    "tags": [
+      "cyc5_utilities_safe_yield",
+      "CYC-005",
+      "sector-specific",
+      "utilities",
+      "inverted"
+    ],
+    "source": "OBQ FactorLab CYC-005-GPU (2026)",
+    "content": "## Utilities: Safe Dividend Yield\n\n**Score column:** `cyc5_utilities_safe_yield` · **Cycle:** CYC-005b Novel Sector Factor\n\n| Run | OBQ | ICIR | Spread | Bear |\n|---|---|---|---|---|\n| Within-Utilities | **-0.022** | -0.032 | -3.8% | -13.8% |\n| R3K Cross-Sectional | 0.012 | -0.053 | -0.7% | -3.6% |\n\n## Verdict\nINVERTED — OBQ -0.022, Bear score -13.8%\n\n## How to Use in App\nIn the Strategy Log, filter cycle to **CYC-005b** and search for `cyc5_utilities_safe_yield` to see the full tearsheet with sector attribution and Tortoriello stats.\n"
+  },
+  {
+    "id": "cyc005-cyc5-realestate-ffo-yield",
+    "section": "CYC-005 Sector Intelligence",
+    "part": "Part XIV — CYC-005 Sector-Specific Novel Factors",
+    "title": "Real Estate: FFO Proxy Yield",
+    "summary": "Strong cross-sectionally (0.688). Weak within REIT sector. Within-sector OBQ: 0.172, R3K OBQ: 0.688.",
+    "tags": [
+      "cyc5_realestate_ffo_yield",
+      "CYC-005",
+      "sector-specific",
+      "real-estate",
+      "weak"
+    ],
+    "source": "OBQ FactorLab CYC-005-GPU (2026)",
+    "content": "## Real Estate: FFO Proxy Yield\n\n**Score column:** `cyc5_realestate_ffo_yield` · **Cycle:** CYC-005b Novel Sector Factor\n\n| Run | OBQ | ICIR | Spread | Bear |\n|---|---|---|---|---|\n| Within-Real Estate | **0.172** | 0.114 | +1.5% | +3.5% |\n| R3K Cross-Sectional | 0.688 | 1.477 | +13.0% | +12.6% |\n\n## Verdict\nStrong cross-sectionally (0.688). Weak within REIT sector\n\n## How to Use in App\nIn the Strategy Log, filter cycle to **CYC-005b** and search for `cyc5_realestate_ffo_yield` to see the full tearsheet with sector attribution and Tortoriello stats.\n"
+  },
+  {
+    "id": "cyc005-sector-intelligence-summary",
+    "section": "CYC-005 Sector Intelligence",
+    "part": "Part XIV — CYC-005 Sector Intelligence",
+    "title": "CYC-005 Sector Champion Map — All 11 GICS Sectors",
+    "summary": "IT + JCN Alpha Trifecta = OBQ 0.883 (highest in study). Health Care + OCF/Assets = OBQ 0.876, +35.0% spread (widest in study). Health Care R&D Yield = OBQ 0.689 (true sector specialist). 187 jobs, 0 errors. Sector filters now available in Strategy Log.",
+    "tags": [
+      "CYC-005",
+      "sector-champions",
+      "sector-intelligence",
+      "all-sectors"
+    ],
+    "source": "OBQ FactorLab CYC-005-GPU (2026)",
+    "content": "## CYC-005 Sector Champion Map\n\n| Sector | Champion | OBQ | ICIR | Spread | Bear |\n|---|---|---|---|---|---|\n| Energy | JCN Alpha Trifecta | 0.597 | 0.93 | +20.5% | +13.9% |\n| Materials | JCN QARP | 0.739 | 1.29 | +20.8% | +11.0% |\n| Industrials | JCN Alpha Trifecta | 0.660 | 1.37 | +15.7% | +12.5% |\n| Consumer Disc | JCN Alpha Trifecta | 0.683 | 1.30 | +14.5% | +12.4% |\n| Consumer Staples | Sales/EV | 0.694 | 1.37 | +16.3% | +6.9% |\n| **Health Care** | **OCF/Assets** | **0.876** | **1.76** | **+35.0%** | +24.2% |\n| Financials | JCN Alpha Trifecta | 0.568 | 0.98 | +11.0% | +7.7% |\n| **IT** | **JCN Alpha Trifecta** | **0.883** | **1.92** | +25.1% | +18.8% |\n| Comm Services | Skip-Month Mom | 0.664 | 0.87 | +16.8% | +11.6% |\n| Utilities | OCF/Assets | 0.296 | 0.25 | +4.8% | +8.0% |\n| Real Estate | OCF/Assets | 0.398 | 0.42 | +8.5% | +15.1% |\n\nFilter the Strategy Log by **CYC-005a** to browse all 165 within-sector runs.\nFilter by **CYC-005b** to browse the 22 novel sector factor runs.\n"
   }
 ]

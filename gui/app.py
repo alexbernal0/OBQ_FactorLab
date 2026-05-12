@@ -701,18 +701,25 @@ def factor_result(run_id):
 
 @app.route("/api/factor/bank")
 def factor_bank():
-    """Return all saved factor models from the strategy bank."""
+    """Return all saved factor models from the strategy bank.
+    Supports optional query params:
+      ?cycle=CYC-003   — filter by cycle tag
+      ?sort=icir        — sort column (default: obq_fund_score)
+      ?limit=2000       — max rows (default: 2000, covers all cycles)
+    """
     try:
         from engine.strategy_bank import get_all_models, get_bank_summary
-        models = get_all_models(limit=500)
+        cycle  = request.args.get("cycle",  None)
+        sort   = request.args.get("sort",   "obq_fund_score")
+        limit  = int(request.args.get("limit", 2000))
+        models  = get_all_models(limit=limit, cycle_filter=cycle, sort_by=sort)
         summary = get_bank_summary()
-        # Clean NaN
         import math as _math
         def _c(v):
             if isinstance(v, float) and (_math.isnan(v) or _math.isinf(v)): return None
             return v
         models = [{k: _c(v) for k, v in m.items()} for m in models]
-        return jsonify({"models": models, "summary": summary})
+        return jsonify({"models": models, "summary": summary, "total": len(models)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

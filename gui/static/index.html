@@ -291,8 +291,17 @@
       <div style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
         <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:var(--bg-panel2);border-top:2px solid var(--border);flex-shrink:0">
           <span style="font-size:8px;font-weight:700;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">&#128202; STRATEGY LOG</span>
-          <div style="display:flex;gap:6px;align-items:center">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <span id="fl-bank-count" style="font-size:8px;color:var(--text-muted)">0 saved</span>
+            <select id="fl-log-cycle" onchange="flResortLog()" style="font-size:8px;padding:2px 5px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:3px" title="Filter by research cycle">
+              <option value="all">All Cycles</option>
+              <option value="CYC-001">CYC-001</option>
+              <option value="CYC-002">CYC-002</option>
+              <option value="CYC-003-GPU">CYC-003</option>
+              <option value="CYC-004-GPU">CYC-004</option>
+              <option value="CYC-005a">CYC-005a Sector Champions</option>
+              <option value="CYC-005b">CYC-005b Novel Factors</option>
+            </select>
             <select id="fl-log-sort" onchange="flResortLog()" style="font-size:8px;padding:2px 5px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:3px">
               <option value="icir">ICIR</option>
               <option value="obq_fund_score">OBQ Fund Score</option>

@@ -333,10 +333,29 @@ def save_factor_model(result: dict, overwrite: bool = True) -> str:
 
 # ── Query the bank ─────────────────────────────────────────────────────────────
 
-def get_all_models(limit: int = 200) -> list[dict]:
-    """Return all saved factor models sorted by ICIR desc."""
+def get_all_models(limit: int = 2000,
+                   cycle_filter: Optional[str] = None,
+                   sort_by: str = "obq_fund_score") -> list[dict]:
+    """
+    Return saved factor models sorted by OBQ Master Score descending.
+
+    Args:
+        limit:         Max rows (default 2000 — covers all current + future cycles)
+        cycle_filter:  Optional cycle tag substring filter (e.g. 'CYC-003', 'CYC-005')
+        sort_by:       Column to sort by (default: obq_fund_score)
+    """
     con = _get_bank()
     try:
+        where = ""
+        if cycle_filter:
+            where = f"WHERE run_label LIKE '%{cycle_filter}%'"
+
+        # Whitelist sort columns to prevent SQL injection
+        safe_sort = sort_by if sort_by in (
+            "obq_fund_score", "icir", "quintile_spread_cagr", "q1_cagr",
+            "staircase_score", "alpha_win_rate", "bear_score", "created_at"
+        ) else "obq_fund_score"
+
         rows = con.execute(f"""
             SELECT strategy_id, created_at::VARCHAR, run_label, score_column,
                    n_buckets, hold_months, start_date, end_date, cap_tier,
@@ -347,7 +366,8 @@ def get_all_models(limit: int = 200) -> list[dict]:
                    bear_score, bull_score, downside_capture, alpha_sharpe, obq_fund_score,
                    status, notes, promoted_to, tags
             FROM factor_models
-            ORDER BY created_at DESC NULLS LAST
+            {where}
+            ORDER BY {safe_sort} DESC NULLS LAST
             LIMIT {limit}
         """).fetchdf()
         return rows.to_dict(orient="records")

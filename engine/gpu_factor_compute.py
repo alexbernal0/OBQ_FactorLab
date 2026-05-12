@@ -71,41 +71,85 @@ BULL_WINDOWS = [
 
 
 # ── GPU primitives ─────────────────────────────────────────────────────────────
+# IMPORTANT: cp.ceil on float64 hangs on CuPy 14 / RTX 3090 for large arrays.
+# All bucket assignment uses pure integer arithmetic (argsort → scatter) instead.
+
+def _argsort_descending(X_gpu: "cp.ndarray", valid_mask: "cp.ndarray") -> "cp.ndarray":
+    """
+    Return argsort indices for descending sort of each row.
+    Invalid entries sort to the end (highest position index).
+    """
+    X_neg = cp.where(valid_mask, -X_gpu, cp.float64(1e18))
+    return cp.argsort(X_neg, axis=1)   # ascending on negated = descending on original
+
+
+def _argsort_ascending(X_gpu: "cp.ndarray", valid_mask: "cp.ndarray") -> "cp.ndarray":
+    """
+    Return argsort indices for ascending sort of each row.
+    Invalid entries sort to the end.
+    """
+    X_safe = cp.where(valid_mask, X_gpu, cp.float64(1e18))
+    return cp.argsort(X_safe, axis=1)
+
+
+def _assign_buckets_from_order(
+    order: "cp.ndarray",
+    valid_mask: "cp.ndarray",
+    nv_eff: "cp.ndarray",
+    n_buckets: int,
+) -> "cp.ndarray":
+    """
+    Scatter bucket IDs [1..n_buckets] onto stocks using their sort order.
+
+    Avoids cp.ceil entirely — uses only integer arithmetic.
+    For position pos (0-based) among n_valid stocks:
+        bucket = (pos * n_buckets) // n_valid + 1
+    Positions >= n_valid (invalid stocks) get bucket 0.
+
+    Returns int32 (n_periods, max_stocks), 1..n_buckets for valid, 0 for invalid.
+    """
+    n_p, n_s = order.shape
+    rows = cp.arange(n_p, dtype=cp.int32)[:, None]
+    pos  = cp.arange(n_s, dtype=cp.int32)[None, :]    # 0-based position in sorted order
+    nv   = cp.maximum(nv_eff[:, None].astype(cp.int32), 1)   # (n_p, 1)
+
+    # bucket by position (integer only, no cp.ceil)
+    bucket_by_pos = (pos * n_buckets) // nv + 1        # 1-based
+    bucket_by_pos = cp.clip(bucket_by_pos, 1, n_buckets).astype(cp.int32)
+
+    # Only positions < n_valid are valid
+    pos_valid = pos < nv_eff[:, None]
+    bucket_by_pos = cp.where(pos_valid, bucket_by_pos, cp.int32(0))
+
+    # Scatter: original_index = order[i, pos] → assign bucket
+    buckets = cp.empty((n_p, n_s), dtype=cp.int32)
+    buckets[rows, order] = bucket_by_pos
+    return buckets
+
 
 def _batch_rank_2d(X_gpu: "cp.ndarray", valid_mask: "cp.ndarray") -> "cp.ndarray":
     """
-    Rank each row of X_gpu independently, ignoring invalid entries.
-    Invalid entries are sorted to the end before ranking.
-    Returns cp.ndarray shape (n_periods, max_stocks) float64 ranks (1-based).
-    Only valid positions have meaningful ranks; invalid positions = 0.
-
-    Uses argsort(argsort(x)) + 1 pattern — fully vectorized on GPU.
+    Rank each row ascending (rank 1 = lowest value). Used for lower_better factors.
+    Invalid entries = 0.  Returns float64 for IC computation.
     """
-    # Push invalid entries to the end by replacing with +inf before argsort
-    X_for_rank = cp.where(valid_mask, X_gpu, cp.float64(1e18))
+    order = _argsort_ascending(X_gpu, valid_mask)
     n, m = X_gpu.shape
-    order = cp.argsort(X_for_rank, axis=1)  # ascending: rank 1 = lowest value
-    ranks = cp.empty_like(X_gpu, dtype=cp.float64)
-    rows = cp.arange(n)[:, None]
+    ranks = cp.empty((n, m), dtype=cp.float64)
+    rows = cp.arange(n, dtype=cp.int32)[:, None]
     ranks[rows, order] = cp.arange(1, m + 1, dtype=cp.float64)[None, :]
-    # Zero out invalid
     ranks = cp.where(valid_mask, ranks, cp.float64(0.0))
     return ranks
 
 
 def _batch_rank_2d_descending(X_gpu: "cp.ndarray", valid_mask: "cp.ndarray") -> "cp.ndarray":
     """
-    Rank each row descending (rank 1 = highest value).
-    Invalid entries = 0.
-    Used for higher_better factors (Q1 = top-ranked = best).
+    Rank each row descending (rank 1 = highest value). Used for higher_better factors.
+    Invalid entries = 0.  Returns float64 for IC computation.
     """
-    # Push invalid to end (lowest) before descending argsort
-    # For descending: negate valid entries, sort ascending
-    X_neg = cp.where(valid_mask, -X_gpu, cp.float64(1e18))
+    order = _argsort_descending(X_gpu, valid_mask)
     n, m = X_gpu.shape
-    order = cp.argsort(X_neg, axis=1)
-    ranks = cp.empty_like(X_gpu, dtype=cp.float64)
-    rows = cp.arange(n)[:, None]
+    ranks = cp.empty((n, m), dtype=cp.float64)
+    rows = cp.arange(n, dtype=cp.int32)[:, None]
     ranks[rows, order] = cp.arange(1, m + 1, dtype=cp.float64)[None, :]
     ranks = cp.where(valid_mask, ranks, cp.float64(0.0))
     return ranks
@@ -118,13 +162,10 @@ def _rank_avg_gpu(S_a: "cp.ndarray", S_b: "cp.ndarray",
                   dir_b: str = 'higher_better') -> "cp.ndarray":
     """
     Compute rank-average combo score of two factors on GPU.
-    Each factor is percentile-ranked (0→1) then averaged.
-    Handles direction (lower_better inverts the rank).
-    Returns (n_periods, max_stocks) float64 — 0 for invalid, 0..1 for valid.
+    Percentile rank = rank / n_valid (float64 division on rank values which are
+    already int-valued, so no cp.ceil needed).
+    Returns (n_periods, max_stocks) float64 — NaN for invalid.
     """
-    # For lower_better: small value = good = high rank → rank ascending gives
-    #   rank 1 to smallest → percentile = rank/n_valid → 1/n (best for lower_better)
-    # For higher_better: rank descending (rank 1 = largest)
     if dir_a == 'higher_better':
         ra = _batch_rank_2d_descending(S_a, valid_mask)
     else:
@@ -135,13 +176,11 @@ def _rank_avg_gpu(S_a: "cp.ndarray", S_b: "cp.ndarray",
     else:
         rb = _batch_rank_2d(S_b, valid_mask)
 
-    # Percentile-rank: rank / n_valid (0→1, higher = better)
-    nv = cp.maximum(n_valid[:, None].astype(cp.float64), 1.0)
-    pct_a = cp.where(valid_mask, ra / nv, cp.float64(0.0))
-    pct_b = cp.where(valid_mask, rb / nv, cp.float64(0.0))
+    # Percentile: rank / n_valid  — safe float division (ranks are 1..n_valid)
+    nv   = cp.maximum(n_valid[:, None].astype(cp.float64), 1.0)
+    pct_a = cp.where(valid_mask & (ra > 0), ra / nv, cp.float64(0.0))
+    pct_b = cp.where(valid_mask & (rb > 0), rb / nv, cp.float64(0.0))
 
-    # Combo = average of percentile ranks
-    # Zero out where either score is missing
     both_valid = valid_mask & (ra > 0) & (rb > 0)
     combo = cp.where(both_valid, (pct_a + pct_b) / 2.0, cp.float64(np.nan))
     return combo
@@ -311,27 +350,21 @@ def run_factor_on_gpu(
     # Per-period valid count
     nv_eff = both_valid.sum(axis=1).astype(cp.int32)  # (n_periods,)
 
-    # ── Step 1: Rank scores ───────────────────────────────────────────────────
-    # lower_better → ascending rank (rank 1 = lowest score = Q1)
-    # higher_better → descending rank (rank 1 = highest score = Q1)
+    # ── Steps 1+2: Sort → assign buckets (no cp.ceil, pure integer scatter) ────
+    # cp.ceil on float64 hangs on CuPy 14 / RTX 3090 for large matrices.
+    # Instead: argsort → scatter bucket IDs by sorted position. O(n log n), fast.
     if lower_better:
-        score_ranks = _batch_rank_2d(scores_gpu, both_valid)
+        score_order = _argsort_ascending(scores_gpu, both_valid)
     else:
-        score_ranks = _batch_rank_2d_descending(scores_gpu, both_valid)
+        score_order = _argsort_descending(scores_gpu, both_valid)
 
-    # ── Step 2: Assign buckets ────────────────────────────────────────────────
-    # bucket = ceil(rank / n_valid * n_buckets), clipped to [1, n_buckets]
-    # CRITICAL: clamp score_ranks to valid range BEFORE int cast.
-    # Invalid entries have sentinel rank ~1e18; ceil(1e18/3440*5) overflows int32
-    # → causes CuPy to spin. Zero out invalid entries first.
-    nv_f = cp.maximum(nv_eff[:, None].astype(cp.float64), 1.0)
-    sr_clamped = cp.where(both_valid, score_ranks, cp.float64(0.0))
-    bucket_f = cp.ceil(sr_clamped / nv_f * n_buckets)
-    buckets = cp.clip(bucket_f.astype(cp.int32), 1, n_buckets)
-    buckets = cp.where(both_valid, buckets, cp.int32(0))  # 0 = invalid
+    buckets = _assign_buckets_from_order(score_order, both_valid, nv_eff, n_buckets)
+
+    # Score ranks (float64) still needed for Spearman IC
+    score_ranks = _batch_rank_2d(scores_gpu, both_valid) if lower_better \
+                  else _batch_rank_2d_descending(scores_gpu, both_valid)
 
     # ── Step 3: Spearman IC = Pearson(score_ranks, return_ranks) ─────────────
-    # Return ranks for IC computation
     return_ranks = _batch_rank_2d_descending(returns_gpu, both_valid)
 
     # Per-period Pearson of score_ranks and return_ranks (vectorized, no Python loop)
