@@ -414,18 +414,36 @@ if __name__ == '__main__':
     total_ok  = sum(s['ok']  for s in all_summaries)
     total_err = sum(s['err'] for s in all_summaries)
 
-    # ── Bulk INSERT all results in one shot ───────────────────────────────────
+    # ── Bulk INSERT — reuse ONE connection for all 1199 records ──────────────
+    # Monkey-patch _get_bank to return a cached connection so all save_factor_model()
+    # calls reuse the same open connection instead of open/close per record.
     if result_buffer:
-        log.info(f"\nBulk inserting {len(result_buffer):,} results into bank...")
+        log.info(f"\nBulk inserting {len(result_buffer):,} results (single-connection batch)...")
         t_insert = time.time()
-        saved = 0
-        for r in result_buffer:
-            try:
-                save_factor_model(r, overwrite=True)
-                saved += 1
-            except Exception as exc:
-                log.warning(f"  Insert failed {r.get('score_column')}: {str(exc)[:60]}")
-        log.info(f"  Bulk insert complete: {saved}/{len(result_buffer)} saved in {time.time()-t_insert:.1f}s")
+        try:
+            from engine.strategy_bank import save_factor_model as _sfm, _get_bank
+
+            # Open ONE shared connection — passed to every save_factor_model call.
+            # The _shared_con parameter tells save_factor_model NOT to close after saving.
+            _shared = _get_bank()
+            saved = 0
+            for result in result_buffer:
+                try:
+                    _sfm(result, overwrite=True, _shared_con=_shared)
+                    saved += 1
+                except Exception as exc:
+                    log.warning(f"  Save failed: {str(exc)[:60]}")
+                if saved % 300 == 0 and saved > 0:
+                    log.info(f"  Inserted {saved}/{len(result_buffer)} ...")
+            _shared.close()
+
+            insert_s = time.time() - t_insert
+            log.info(f"  Bulk insert complete: {saved}/{len(result_buffer)} in {insert_s:.1f}s "
+                     f"({len(result_buffer)/max(insert_s,0.1):.0f} rec/s)")
+
+        except Exception as exc:
+            log.error(f"  Bulk insert failed: {exc}")
+            import traceback; traceback.print_exc()
 
     print(f"\n{'='*60}")
     print(f"  CYC-006 COMPLETE")
