@@ -43,6 +43,8 @@ PART_ORDER = [
     'Part_XIII_CYC004_Tier3',
     # CYC-005 sector-specific novel factors
     'Part_XIV_CYC005_Sector',
+    # CYC-006 rebalance timing research
+    'Part_XV_CYC006_Timing',
 ]
 
 # Color palette
@@ -462,7 +464,7 @@ def main():
     # Cover
     story.append(Spacer(1, 1.5 * inch))
     story.append(Paragraph("OBQ Factor Encyclopedia", styles['cover_title']))
-    story.append(Paragraph("Volume II \u2014 Russell 3000 Edition", styles['cover_sub']))
+    story.append(Paragraph("Volume II \u2014 Russell 3000 Edition  \u00b7  v2.1", styles['cover_sub']))
     story.append(Spacer(1, 0.2 * inch))
     story.append(Paragraph(
         f"<b>{total}</b> factor chapters across <b>{n_parts}</b> parts<br/><br/>"
@@ -558,7 +560,7 @@ def main():
         pagesize=letter,
         leftMargin=0.6*inch, rightMargin=0.6*inch,
         topMargin=0.65*inch, bottomMargin=0.65*inch,
-        title="OBQ Factor Encyclopedia v2",
+        title="OBQ Factor Encyclopedia v2.1",
         author="OBQ FactorLab",
     )
     doc.build(
