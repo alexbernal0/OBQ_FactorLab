@@ -251,14 +251,36 @@ def _get_rebalance_dates(
     start_date: str,
     end_date: str,
     rebal_freq: str = 'semi-annual',
+    custom_months: Optional[list] = None,  # e.g. [1,7] for Jan+Jul semi-annual
 ) -> list[str]:
-    """Semi-annual = June 30 + Dec 31 endpoints. Monthly = all months."""
-    freq_filter = {
-        'monthly':     'TRUE',
-        'quarterly':   'MONTH(month_date) IN (3,6,9,12)',
-        'semi-annual': 'MONTH(month_date) IN (6,12)',
-        'annual':      'MONTH(month_date) = 12',
-    }.get(rebal_freq, 'MONTH(month_date) IN (6,12)')
+    """
+    Return rebalance date strings for the requested frequency.
+
+    custom_months: if provided, overrides rebal_freq — uses exactly these calendar months.
+    rebal_freq presets:
+      'monthly'     → all months
+      'quarterly'   → 3,6,9,12
+      'semi-annual' → 6,12  (baseline)
+      'annual'      → 12
+      'annual-q1'   → 3
+      'annual-q2'   → 6
+      'annual-q3'   → 9
+      'annual-q4'   → 12
+    """
+    if custom_months:
+        month_list = ','.join(str(m) for m in custom_months)
+        freq_filter = f'MONTH(month_date) IN ({month_list})'
+    else:
+        freq_filter = {
+            'monthly':     'TRUE',
+            'quarterly':   'MONTH(month_date) IN (3,6,9,12)',
+            'semi-annual': 'MONTH(month_date) IN (6,12)',
+            'annual':      'MONTH(month_date) = 12',
+            'annual-q1':   'MONTH(month_date) = 3',
+            'annual-q2':   'MONTH(month_date) = 6',
+            'annual-q3':   'MONTH(month_date) = 9',
+            'annual-q4':   'MONTH(month_date) = 12',
+        }.get(rebal_freq, 'MONTH(month_date) IN (6,12)')
 
     rows = con.execute(f"""
         SELECT DISTINCT month_date::VARCHAR AS d
@@ -671,6 +693,7 @@ def load_all_data(
     hold_months: int = 6,
     min_price: float = 5.0,
     min_adv_usd: float = 1_000_000.0,
+    custom_months: Optional[list] = None,  # override rebal_freq with exact month list
 ) -> GPUDataPack:
     """
     ONE DuckDB connection loads ALL data for ALL 326 factor runs into VRAM.
@@ -694,7 +717,8 @@ def load_all_data(
 
     try:
         # Step 1: Rebalance dates
-        dates = _get_rebalance_dates(con, start_date, end_date, rebal_freq)
+        dates = _get_rebalance_dates(con, start_date, end_date, rebal_freq,
+                                     custom_months=custom_months)
         if len(dates) < 3:
             raise ValueError(f"Only {len(dates)} rebalance dates found — check DB and date range")
         log.info(f"  Rebalance dates: {len(dates)} ({dates[0]} → {dates[-1]})")
@@ -758,15 +782,29 @@ def load_all_data(
             cyc4_cols = [r[0] for r in cyc4_cols_raw]
 
             if cyc4_cols:
-                cols_sql = ", ".join(cyc4_cols)
+                cols_sql = ", ".join(f"s.{c}" for c in cyc4_cols)
+                # ASOF join: for each rebalance date, use the latest score
+                # with month_date <= rebalance date (within 1 year).
+                # This makes CYC-004 scores available at quarterly/annual dates
+                # by carrying forward the most recent semi-annual score.
                 rows = fund_con.execute(f"""
-                    SELECT
-                        CASE WHEN symbol LIKE '%.US' THEN symbol
-                             ELSE CONCAT(symbol, '.US') END AS symbol,
-                        month_date::VARCHAR, {cols_sql}
-                    FROM scores.obq_cyc004_scores
-                    WHERE month_date IN ({dates_sql})
-                    ORDER BY month_date, symbol
+                    WITH rebal_dates AS (
+                        SELECT UNNEST([{dates_sql}]::DATE[]) AS rebal_date
+                    ),
+                    asof_scores AS (
+                        SELECT
+                            r.rebal_date,
+                            CASE WHEN s.symbol LIKE '%.US' THEN s.symbol
+                                 ELSE CONCAT(s.symbol, '.US') END AS symbol,
+                            {cols_sql}
+                        FROM rebal_dates r
+                        ASOF JOIN scores.obq_cyc004_scores s
+                        ON r.rebal_date >= s.month_date
+                        WHERE DATEDIFF('day', s.month_date, r.rebal_date) <= 366
+                    )
+                    SELECT symbol, rebal_date::VARCHAR, {', '.join(cyc4_cols)}
+                    FROM asof_scores
+                    ORDER BY rebal_date, symbol
                 """).fetchall()
 
                 for row in rows:
@@ -798,15 +836,24 @@ def load_all_data(
             """).fetchall()
             cyc5_cols = [r[0] for r in cyc5_cols_raw]
             if cyc5_cols:
-                cols5_sql = ", ".join(cyc5_cols)
+                cols5_sql = ", ".join(f"s.{c}" for c in cyc5_cols)
                 rows5 = fund_con.execute(f"""
-                    SELECT
-                        CASE WHEN symbol LIKE '%.US' THEN symbol
-                             ELSE CONCAT(symbol, '.US') END AS symbol,
-                        month_date::VARCHAR, {cols5_sql}
-                    FROM scores.obq_cyc005_scores
-                    WHERE month_date IN ({dates_sql})
-                    ORDER BY month_date, symbol
+                    WITH rebal_dates AS (
+                        SELECT UNNEST([{dates_sql}]::DATE[]) AS rebal_date
+                    ),
+                    asof_scores AS (
+                        SELECT r.rebal_date,
+                            CASE WHEN s.symbol LIKE '%.US' THEN s.symbol
+                                 ELSE CONCAT(s.symbol, '.US') END AS symbol,
+                            {cols5_sql}
+                        FROM rebal_dates r
+                        ASOF JOIN scores.obq_cyc005_scores s
+                        ON r.rebal_date >= s.month_date
+                        WHERE DATEDIFF('day', s.month_date, r.rebal_date) <= 366
+                    )
+                    SELECT symbol, rebal_date::VARCHAR, {', '.join(cyc5_cols)}
+                    FROM asof_scores
+                    ORDER BY rebal_date, symbol
                 """).fetchall()
                 for row in rows5:
                     sym = row[0]; date_str = row[1]

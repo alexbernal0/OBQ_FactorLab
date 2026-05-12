@@ -895,11 +895,26 @@
     if (!r || !r.models) { if (empty) empty.textContent = "Error loading bank"; return; }
 
     const models = r.models || [];
-    if (count) count.textContent = models.length + " saved";
 
-    if (!models.length) {
-      body.innerHTML = "";
-      if (empty) { empty.style.display = "block"; empty.textContent = "No portfolio models yet"; }
+    // Detect legacy records (from before current research sessions — pre-CYC-003)
+    const CYC_START = '2026-05-07';  // CYC-003 start date
+    const legacy  = models.filter(m => (m.created_at || '').slice(0,10) < CYC_START);
+    const current = models.filter(m => (m.created_at || '').slice(0,10) >= CYC_START);
+    const display = current.length > 0 ? current : [];   // show only current-session models
+
+    if (count) count.textContent = (display.length || "No") + " portfolio models" +
+      (legacy.length > 0 ? ` · ${legacy.length} legacy (hidden)` : "");
+
+    if (!display.length) {
+      body.innerHTML = legacy.length > 0
+        ? `<div style="padding:12px;font-size:9px;color:var(--text-muted)">
+             <b>${legacy.length} portfolio models from a previous session are archived.</b><br>
+             No portfolios have been run in the current research session (CYC-003 onward).<br>
+             Use the <b>Run Portfolio</b> panel above to create new ones.
+           </div>`
+        : "";
+      if (empty) empty.style.display = display.length ? "none" : "block";
+      if (empty && !legacy.length) empty.textContent = "No portfolio models yet — run a backtest above";
       return;
     }
     if (empty) empty.style.display = "none";
@@ -908,7 +923,7 @@
     function pct(v,d=2) { if(v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
     function num(v,d=2) { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
 
-    models.forEach(m => {
+    display.forEach(m => {
       const tr = document.createElement("div");
       tr.className = "fl-tr";
       const cagr = m.cagr;
