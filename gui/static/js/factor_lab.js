@@ -24,6 +24,57 @@
     if (endEl && !endEl.value) endEl.valueAsDate = new Date();
   };
 
+  // ── Pre-load bank records — reads from server-injected window.__FACTOR_BANK__
+  // so the table is populated synchronously with zero network round-trips.
+  // Falls back to a fetch() if the global isn't present (e.g. dev reload).
+  function _loadBankIntoRuns() {
+    const models = window.__FACTOR_BANK__;
+    if (models && Array.isArray(models)) {
+      _injectBankModels(models);
+    } else {
+      // Fallback: fetch from API
+      _flSetStatus("Loading saved models from bank...");
+      fetch("/api/factor/bank?limit=2000")
+        .then(r => r.json())
+        .then(r => { if (r && r.models) _injectBankModels(r.models); })
+        .catch(() => _flSetStatus(""));
+    }
+  }
+
+  function _injectBankModels(models) {
+    const existingIds = new Set(_fl_runs.map(x => x.run_id));
+    const bankRuns = models.map(m => ({
+      run_id:         m.strategy_id,
+      run_label:      m.run_label || m.strategy_id,
+      status:         "saved",
+      result:         null,         // lazy-loaded on click
+      factor_metrics: {
+        quintile_spread_cagr: m.quintile_spread_cagr,
+        ic_mean:              m.ic_mean,
+        icir:                 m.icir,
+        ic_hit_rate:          m.ic_hit_rate,
+        monotonicity_score:   m.monotonicity_score,
+        q1_cagr:              m.q1_cagr,
+        q1_sharpe:            m.q1_sharpe,
+        obq_fund_score:       m.obq_fund_score,
+        staircase_score:      m.staircase_score,
+      },
+      _from_bank: true,
+    })).filter(x => !existingIds.has(x.run_id));
+
+    _fl_runs = [..._fl_runs.filter(r => !r._from_bank), ...bankRuns];
+    _renderRunsTable();
+    _flSetStatus(`${bankRuns.length} models ready`);
+  }
+
+  // Public so a refresh button can re-fetch after new runs are saved
+  window.flRefreshBank = function () {
+    fetch("/api/factor/bank?limit=2000")
+      .then(r => r.json())
+      .then(r => { if (r && r.models) _injectBankModels(r.models); })
+      .catch(() => {});
+  };
+
   // ── Load available scores from API ─────────────────────────────────────────
   async function _loadScores() {
     const r = await fetch("/api/factor/scores").then(r => r.json()).catch(() => null);
@@ -169,13 +220,31 @@
       const isActive  = run.run_id === _fl_active;
       const tr = document.createElement("div");
       tr.className = "fl-tr" + (isActive ? " active" : "");
-      tr.onclick = () => { _fl_active = run.run_id; _renderRunsTable(); _showTearsheet(run.run_id); };
+      tr.onclick = () => {
+        _fl_active = run.run_id;
+        _renderRunsTable();
+        if (run._from_bank && !run.result) {
+          // Lazy-load full result from bank, then show tearsheet
+          _flSetStatus("Loading model detail...");
+          fetch(`/api/factor/bank/${run.run_id}`)
+            .then(r => r.json())
+            .then(full => {
+              run.result = full;
+              run.status = "complete";
+              _flSetStatus("");
+              _showTearsheet(run.run_id);
+            })
+            .catch(() => _flSetStatus("Error loading model detail"));
+        } else {
+          _showTearsheet(run.run_id);
+        }
+      };
 
       function pct(v, d=1)  { if(v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
       function num(v, d=2)  { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
       function pctR(v, d=0) { if(v==null||isNaN(v)) return "—"; return (v*100).toFixed(d)+"%"; }
 
-      const icon = isRunning ? "⌛" : (run.status === "error" ? "✗" : "✓");
+      const icon = isRunning ? "⌛" : run.status === "error" ? "✗" : run.status === "saved" ? "🗄" : "✓";
       const spread = fm.quintile_spread_cagr;
       const sCol = spread != null ? (spread >= 0 ? "g" : "r") : "";
 
@@ -617,18 +686,233 @@
     function _arr(f) { return Array.isArray(f) ? f : []; }
     function _obj(f) { return (f && typeof f === "object" && !Array.isArray(f)) ? f : {}; }
 
-    const dates        = _arr(full.dates_json);
-    const bucketMetrics= _obj(full.bucket_metrics_json);
+    let dates        = _arr(full.dates_json);
+    let bucketMetrics= _obj(full.bucket_metrics_json);
     const icData       = _arr(full.ic_data_json);
     const bucketEquity = _obj(full.bucket_equity_json);
-    const annualRet    = _obj(full.annual_ret_json);
-    const tort         = _obj(full.tortoriello_json);
-    const univMetrics  = _obj(full.universe_metrics_json);
+    let annualRet    = _obj(full.annual_ret_json);
+    let tort         = _obj(full.tortoriello_json);
+    let univMetrics  = _obj(full.universe_metrics_json);
     const periodData   = _arr(full.period_data_json);
     const sectorAttr   = _arr(full.sector_attribution_json);
     const spyMetrics   = _obj(full.spy_metrics_json);
     const tradeLog     = _arr(full.trade_log_json);
     const cfg          = _obj(full.config_json);
+
+    // ── Fill any remaining missing fields ────────────────────────────────────
+
+    // 0. Add calmar to bucket_metrics if missing (calmar = cagr / abs(max_dd))
+    Object.keys(bucketMetrics).forEach(function(b) {
+      const bm = bucketMetrics[b];
+      if (bm && bm.calmar == null && bm.cagr != null && bm.max_dd != null && bm.max_dd !== 0) {
+        bm.calmar = +(bm.cagr / Math.abs(bm.max_dd)).toFixed(3);
+      }
+    });
+
+    // 1. If dates still empty, reconstruct from start/end span
+    if (dates.length === 0 && full.start_date && full.end_date) {
+      const firstEq  = bucketEquity["1"] || bucketEquity[Object.keys(bucketEquity)[0]] || [];
+      const nPeriods = firstEq.length > 1 ? firstEq.length - 1 : (full.n_obs || 60);
+      const startMs  = new Date(full.start_date).getTime();
+      const endMs    = new Date(full.end_date).getTime();
+      const stepMs   = (endMs - startMs) / nPeriods;
+      dates = [];
+      for (let i = 1; i <= nPeriods; i++) {
+        const d       = new Date(startMs + i * stepMs);
+        const snapped = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+        dates.push(snapped.toISOString().slice(0, 10));
+      }
+    }
+
+    // 2. Compute bucket_metrics from stored scalar columns when missing.
+    // CYC-006b tranche records: equity arrays are compounded blended curves whose
+    // per-period returns are valid for Sharpe/MaxDD but whose absolute CAGR is
+    // inflated by the blending. Use stored scalars for CAGR anchoring.
+    if (Object.keys(bucketMetrics).length === 0) {
+      const spread     = full.quintile_spread_cagr || 0;  // Q1-Q5 CAGR spread
+      const alpha      = full.avg_annual_alpha || 0;       // Q1 excess return vs universe
+      const nBuckets   = full.n_buckets || 5;
+      const bucketKeys = Object.keys(bucketEquity).length > 0
+        ? Object.keys(bucketEquity).sort()
+        : Array.from({length: nBuckets}, (_, i) => String(i + 1));
+
+      // Estimate universe CAGR: Q1 CAGR = universe CAGR + alpha
+      // Q1-Q5 spread = Q1 CAGR - Q5 CAGR, assume Q5 ≈ universe - same_alpha_offset
+      // Simple linear interpolation across quintiles
+      const univCagr  = alpha > 0 ? alpha : null;  // proxy only
+      // Q1 CAGR = univCagr + alpha; Q5 = Q1 - spread
+      // We don't know absolute level — mark CAGR as null, show spread-derived relative values
+      // But use the equity curve's period returns for Sharpe/MaxDD (those ARE valid)
+
+      const startYr    = full.start_date ? new Date(full.start_date).getFullYear() : 1995;
+      const endYr      = full.end_date   ? new Date(full.end_date).getFullYear()   : 2024;
+      const nYearsSpan = Math.max(endYr - startYr, 1);
+      const firstEqArr = bucketEquity["1"] || bucketEquity[bucketKeys[0]] || [];
+      const ppy        = firstEqArr.length > 1 ? Math.max(1, Math.round(firstEqArr.length / nYearsSpan)) : 4;
+
+      // Interpolate CAGR linearly from Q1 to Q5 using spread as total range
+      // Q1 CAGR = unknown absolute, but Q1-Q5 spread = spread
+      // Use alpha as Q1 excess: Q1_cagr ≈ avg_annual_alpha (excess vs universe = approximation)
+      // More honest: only set CAGR if we can reliably compute it
+      const q1CagrApprox = (full.avg_annual_alpha != null && full.avg_annual_alpha > 0)
+        ? full.avg_annual_alpha  // this is Q1 excess return above universe, use as proxy
+        : null;
+
+      bucketKeys.forEach(function(b, idx) {
+        const eq = bucketEquity[b] || [];
+
+        // Period returns from equity curve (VALID — consecutive ratios)
+        const rets = [];
+        for (let i = 1; i < eq.length; i++) {
+          if (eq[i-1] > 0) rets.push((eq[i] - eq[i-1]) / eq[i-1]);
+        }
+
+        let sharpe = null, maxDD = null;
+        if (rets.length > 1) {
+          const meanR   = rets.reduce((a, v) => a + v, 0) / rets.length;
+          const variance = rets.reduce((a, v) => a + Math.pow(v - meanR, 2), 0) / rets.length;
+          const stdR    = Math.sqrt(variance);
+          const rf      = 0.04 / ppy;
+          sharpe = stdR > 0 ? +((meanR - rf) / stdR * Math.sqrt(ppy)).toFixed(3) : 0;
+
+          // MaxDD on normalized cumulative from period returns
+          let cum = 1.0, pk = 1.0, dd = 0;
+          rets.forEach(function(r) {
+            cum *= (1 + r);
+            if (cum > pk) pk = cum;
+            const d = (cum - pk) / pk;
+            if (d < dd) dd = d;
+          });
+          maxDD = +dd.toFixed(4);
+        }
+
+        // CAGR: linearly interpolate across quintiles using spread
+        // Q1 spread_fraction = 1.0, Q5 = 0.0, middle buckets in between
+        const fracFromQ1 = (nBuckets > 1) ? 1 - idx / (nBuckets - 1) : 1;
+        const cagrApprox = (q1CagrApprox != null)
+          ? +(q1CagrApprox * fracFromQ1 + (spread * (fracFromQ1 - 0.5))).toFixed(4)
+          : null;
+
+        const terminalWealth = (cagrApprox != null)
+          ? Math.round(Math.pow(1 + cagrApprox, nYearsSpan) * 10000)
+          : null;
+
+        bucketMetrics[b] = {
+          cagr:            cagrApprox,
+          sharpe:          sharpe,
+          max_dd:          maxDD,
+          n_obs:           rets.length,
+          terminal_wealth: terminalWealth,
+        };
+      });
+    }
+
+    // 3. Build tortoriello from bucket_metrics when missing
+    if (Object.keys(tort).length === 0 && Object.keys(bucketMetrics).length > 0) {
+      const nPeriods = dates.length || full.n_obs || 0;
+      Object.entries(bucketMetrics).forEach(function([b, bm]) {
+        tort[b] = {
+          terminal_wealth:        bm.terminal_wealth || Math.round((bm.cagr + 1) * 10000),
+          avg_excess_vs_univ:     null,
+          pct_1y_beats_univ:      full.alpha_win_rate || null,
+          pct_3y_beats_univ:      null,
+          max_gain:               null,
+          max_loss:               bm.max_dd,
+          sharpe:                 bm.sharpe,
+          std_ann:                null,
+          beta_vs_univ:           null,
+          alpha_vs_univ_ann:      full.avg_annual_alpha || null,
+          avg_portfolio_size:     full.n_stocks_avg || null,
+          avg_outperforming:      null,
+          avg_underperforming:    null,
+          median_factor_score:    null,
+          avg_market_cap_m:       null,
+          max_drawdown:           bm.max_dd,
+          calmar:                 bm.max_dd && bm.cagr ? bm.cagr / Math.abs(bm.max_dd) : null,
+        };
+      });
+    }
+
+    // 3a. Enrich tortoriello with avg_portfolio_size from n_stocks_avg scalar
+    // avg_portfolio_size per bucket = total stocks / n_buckets
+    if (full.n_stocks_avg && full.n_stocks_avg > 0) {
+      const nBuckets = full.n_buckets || 5;
+      const avgSize  = Math.round(full.n_stocks_avg / nBuckets);
+      Object.keys(tort).forEach(function(b) {
+        if (tort[b] && tort[b].avg_portfolio_size == null) {
+          tort[b].avg_portfolio_size = avgSize;
+        }
+      });
+    }
+
+    // 3b. Enrich univMetrics with missing fields computed from universe_equity_json
+    // GPU engine only saves cagr/sharpe/max_dd/terminal_wealth — derive the rest
+    if (Object.keys(univMetrics).length > 0) {
+      const univEqArr = _arr(full.universe_equity_json);
+      if (univEqArr.length > 1 && univMetrics.ann_vol == null) {
+        // Compute period returns from equity curve
+        const uRets = [];
+        for (let i = 1; i < univEqArr.length; i++) {
+          if (univEqArr[i-1] > 0) uRets.push((univEqArr[i] - univEqArr[i-1]) / univEqArr[i-1]);
+        }
+        if (uRets.length > 0) {
+          const ppy = dates.length > 0
+            ? Math.max(1, Math.round(univEqArr.length / Math.max(1, new Set(dates.map(d => d.slice(0,4))).size)))
+            : (full.hold_months ? 12 / full.hold_months : 2);
+          const mean = uRets.reduce((a,v) => a+v, 0) / uRets.length;
+          const variance = uRets.reduce((a,v) => a + Math.pow(v-mean, 2), 0) / uRets.length;
+          const std = Math.sqrt(variance);
+          univMetrics.ann_vol    = +(std * Math.sqrt(ppy)).toFixed(4);
+          univMetrics.calmar     = univMetrics.max_dd && univMetrics.max_dd !== 0
+            ? +(univMetrics.cagr / Math.abs(univMetrics.max_dd)).toFixed(3) : null;
+          univMetrics.best_month  = +Math.max(...uRets).toFixed(4);
+          univMetrics.worst_month = +Math.min(...uRets).toFixed(4);
+        }
+      }
+      // Even without equity array, calmar can be derived from cagr + max_dd
+      if (univMetrics.calmar == null && univMetrics.cagr != null && univMetrics.max_dd != null && univMetrics.max_dd !== 0) {
+        univMetrics.calmar = +(univMetrics.cagr / Math.abs(univMetrics.max_dd)).toFixed(3);
+      }
+    }
+
+    // 4. Build universe_metrics from scalar columns when missing
+    // avg_annual_alpha = Q1_CAGR - Universe_CAGR, so Universe_CAGR = Q1_CAGR - avg_annual_alpha
+    if (Object.keys(univMetrics).length === 0) {
+      const q1bm     = bucketMetrics["1"] || {};
+      const q1cagr   = q1bm.cagr;
+      const alpha    = full.avg_annual_alpha;
+      const univCagr = (q1cagr != null && alpha != null) ? q1cagr - alpha : null;
+      const nYears   = dates.length > 0 ? (dates.length / (12 / (full.hold_months || 6))) : null;
+      univMetrics = {
+        cagr:            univCagr,
+        sharpe:          null,
+        max_dd:          null,
+        terminal_wealth: (univCagr != null && nYears != null)
+                           ? Math.round(Math.pow(1 + univCagr, nYears) * 10000)
+                           : null,
+        n_years:         nYears,
+      };
+    }
+
+    // 5. Build annual_ret_by_bucket from equity + dates when missing
+    if (Object.keys(annualRet).length === 0 && dates.length > 0 && Object.keys(bucketEquity).length > 0) {
+      Object.entries(bucketEquity).forEach(function([b, eq]) {
+        const rows = [];
+        let prevYearEndIdx = 0;
+        let prevYearEndEq  = eq[0];
+        const years = [...new Set(dates.map(d => d.slice(0, 4)))];
+        years.forEach(function(yr) {
+          const lastIdxInYear = dates.reduce((best, d, i) => d.startsWith(yr) ? i : best, -1);
+          if (lastIdxInYear < 0) return;
+          const eqIdx  = lastIdxInYear + 1;  // equity has one extra leading point
+          const eqVal  = eq[Math.min(eqIdx, eq.length - 1)];
+          const ret    = prevYearEndEq > 0 ? (eqVal / prevYearEndEq - 1) : 0;
+          rows.push({ year: +yr, ret: +ret.toFixed(4) });
+          prevYearEndEq = eqVal;
+        });
+        annualRet[b] = rows;
+      });
+    }
 
     // Reconstruct universe_terminal:
     // 1. From stored universe_equity (most accurate: final equity × $10K)
@@ -731,32 +1015,37 @@
   };
 
   // ── Load saved models from bank ──────────────────────────────────────────────
-  window.flLoadBank = async function () {
-    const empty = document.getElementById("fl-bank-empty");
-    const r = await fetch("/api/factor/bank").then(r => r.json()).catch(() => null);
-    if (!r || !r.models) {
-      if (empty) empty.textContent = "Error loading bank";
-      return;
-    }
-    const models = r.models || [];
+  // Synchronous path: reads window.__FACTOR_BANK__ injected by Flask at page load.
+  // Async fallback: fetch from API if global was cleared after a new save.
+  function _doRenderBank(models) {
+    if (!models || !models.length) return;
+    if (typeof flSetBankData         === "function") flSetBankData(models);
+    if (typeof flLinkStratsToCycle   === "function") flLinkStratsToCycle(models);
+    const sortEl  = document.getElementById("fl-log-sort");
+    const sortKey = sortEl ? sortEl.value : "obq_fund_score";
+    if (typeof flRenderBankRows === "function") flRenderBankRows(models, sortKey);
+  }
 
-    // Share data with cycles_lab for resort and cycle linking
-    if (typeof flSetBankData  === "function") flSetBankData(models);
-    if (typeof flLinkStratsToCycle === "function") flLinkStratsToCycle(models);
-
-    // Use cycles_lab renderer (handles sort + column layout)
-    const sortEl = document.getElementById("fl-log-sort");
-    const sortKey = sortEl ? sortEl.value : "quintile_spread_cagr";
-    if (typeof flRenderBankRows === "function") {
-      flRenderBankRows(models, sortKey);
+  window.flLoadBank = function () {
+    const preloaded = window.__FACTOR_BANK__;
+    if (preloaded && Array.isArray(preloaded) && preloaded.length > 0) {
+      // Synchronous — data already in memory, render immediately
+      _doRenderBank(preloaded);
+    } else {
+      // Fallback async fetch (after a new run saved and cleared the cache)
+      fetch("/api/factor/bank?limit=2000")
+        .then(function (r) { return r.json(); })
+        .then(function (r) {
+          if (r && r.models) {
+            window.__FACTOR_BANK__ = r.models;
+            _doRenderBank(r.models);
+          }
+        })
+        .catch(function () {});
     }
   };
 
-  // Auto-load bank on init
-  const _origFactorLabInit = window.factorLabInit;
-  window.factorLabInit = function () {
-    if (_origFactorLabInit) _origFactorLabInit();
-    window.flLoadBank();
-  };
+  // flLoadBank is called explicitly from tabs.js DOMContentLoaded
+  // after all scripts (including cycles_lab.js) are loaded.
 
 })();

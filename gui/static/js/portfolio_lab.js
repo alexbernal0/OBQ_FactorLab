@@ -131,6 +131,7 @@
         if (info.strategy_id) {
           run.strategy_id = info.strategy_id;
           _pmSetStatus(_pmGetStatus() + " | Saved: " + info.strategy_id);
+          window.__PM_BANK__ = null;  // invalidate cache so pmLoadBank re-fetches
           pmLoadBank();
         }
         _showPmTearsheet(run_id);
@@ -885,16 +886,22 @@
   };
 
   // ── Bank load ─────────────────────────────────────────────────────────────
+  // Reads from server-injected window.__PM_BANK__ (zero network round-trip).
+  // Falls back to fetch() if the global isn't present.
   window.pmLoadBank = async function () {
     const body  = document.getElementById("pm-bank-body");
     const empty = document.getElementById("pm-bank-empty");
     const count = document.getElementById("pm-bank-count");
     if (!body) return;
 
-    const r = await fetch("/api/portfolio/bank").then(r => r.json()).catch(() => null);
-    if (!r || !r.models) { if (empty) empty.textContent = "Error loading bank"; return; }
-
-    const models = r.models || [];
+    let models;
+    if (window.__PM_BANK__ && Array.isArray(window.__PM_BANK__)) {
+      models = window.__PM_BANK__;
+    } else {
+      const r = await fetch("/api/portfolio/bank").then(r => r.json()).catch(() => null);
+      if (!r || !r.models) { if (empty) empty.textContent = "Error loading bank"; return; }
+      models = r.models || [];
+    }
 
     // Detect legacy records (from before current research sessions — pre-CYC-003)
     const CYC_START = '2026-05-07';  // CYC-003 start date

@@ -123,6 +123,11 @@
 
     // Start on Factor Models tab
     switchMainTab("factor");
+
+    // Load strategy bank into the Strategy Log immediately after all scripts
+    // are ready (flRenderBankRows from cycles_lab.js is now defined)
+    if (typeof flLoadBank === "function") flLoadBank();
+    if (typeof flLoadCycles === "function") flLoadCycles();
   });
 
 })();

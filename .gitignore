@@ -23,7 +23,7 @@ logs/*.jpg
 # Results (large output files)
 results/*.csv
 results/*.pdf
-results/*.parquet
+# NOTE: .parquet bank backups ARE committed (small, compressed scalar-only exports)
 
 # Virtual envs
 .venv/

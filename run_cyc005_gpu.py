@@ -166,6 +166,7 @@ def _run_single_job(
         score_column=factor_col,
         cap_mask_gpu=cap_mask,
         sector_gpu=pack.sector_gpu,
+        market_cap_gpu=getattr(pack, 'market_cap_gpu', None),
     )
 
     if result.get('status') == 'complete':

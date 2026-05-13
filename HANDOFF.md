@@ -1,99 +1,108 @@
-﻿# FactorLab Session Handoff v5.0 — 2026-05-12
-
-## IMMEDIATE NEXT STEP
-
-Start CYC-007 — Sector-Optimized Composite Scores. See below for full spec.
-All research cycles CYC-003 through CYC-006b are complete and committed to GitHub.
+﻿# FactorLab Session Handoff v6.0 — 2026-05-13
 
 ## SYSTEM STATE
 
 ### App
-- FactorLab PyWebView app: `python main.py` -> port 5744
-- Bank: D:/OBQ_AI/OBQ_FactorLab_Bank/factor_strategy_bank.duckdb
-- Total bank records: ~2,848 (571 + 1,198 CYC-006 + 1,077 CYC-006b + extras)
+- FactorLab PyWebView app: `launch.bat` (project-local venv) or `.venv\Scripts\python main.py`
+- Port: 5744 | venv: `.venv/` (isolated, ~400MB, no conflict with other OBQ apps)
+- Bank: D:/OBQ_AI/OBQ_FactorLab_Bank/factor_strategy_bank.duckdb (5GB, local only)
+- GitHub backup: results/factor_bank_scalars.parquet (2,854 records, 0.2MB, scalars only)
 
 ### Key Database Paths
 - Mirror: D:/OBQ_AI/obq_eodhd_mirror.duckdb (Norgate prices, R3000, EODHD fundamentals)
 - Fundamentals: D:/OBQ_AI/obq_fundamentals.duckdb (TTM filings, score tables)
 - Factor Bank: D:/OBQ_AI/OBQ_FactorLab_Bank/factor_strategy_bank.duckdb
-- Encyclopedia: D:/OBQ_AI/OBQ_Encyclopedia_v2/ (v2.1, 140+ chapters)
+- Portfolio Bank: D:/OBQ_AI/OBQ_FactorLab_Bank/portfolio_strategy_bank.duckdb
 
 ## RESEARCH CYCLES COMPLETED
 
-### CYC-003 (273 records) - R3000 Baseline
-- 91 factors x 3 cap tiers (all/large/$10B+/mid/$2B-$10B)
-- Entry: python run_cyc003_gpu.py
-- Top: JCN Alpha Trifecta OBQ 0.839, JCN QARP OBQ 0.848 (large)
+### CYC-003 (272 records) — R3000 Baseline
+- 72 singles + 19 combos × 3 cap tiers (all/large/mid)
+- Top: JCN Alpha Trifecta OBQ 0.839, JCN QARP OBQ 0.848 (large-cap)
 
-### CYC-004 (111 records) - Pure Factor Baselines
-- 37 new pure factors x 3 tiers
+### CYC-004 (111 records) — Pure Factor Baselines
+- 37 pure factors × 3 tiers
 - Key: OCF/Assets OBQ 0.777, F-Score OBQ 0.759, EBIT/Assets OBQ 0.739
-- Entry: python run_cyc004_gpu.py --full (--compute-scores builds score table)
 
-### CYC-005 (187 records) - Sector Intelligence
-- 15 champion factors x 11 sectors + 11 novel sector factors x 2 runs
-- Key: IT + JCN Alpha Trifecta OBQ 0.883 (highest in study)
-- Health Care OCF/Assets OBQ 0.876, +35% Q1-Q5 spread (widest in study)
-- Health Care R&D Yield: OBQ 0.689 within-sector (true sector specialist)
-- Entry: python run_cyc005_gpu.py --full
+### CYC-005 (187 records) — Sector Intelligence
+- 15 champion factors × 11 sectors + 11 novel sector-specialist factors
+- IT + JCN Alpha Trifecta OBQ 0.883 (highest in study)
+- Health Care OCF/Assets OBQ 0.876, +35% Q1-Q5 spread (widest)
 
-### CYC-006 (1,198 records) - Rebalance Timing Study
-- 139 factors x 10 timing variants (quarterly/semi-annual rotations/annual)
-- KEY FINDING: Annual Jun 30 (A-Q2) wins for most factors (26/120)
-- Composites/Growth prefer Dec 31; Value/Quality prefer Jun 30; Momentum prefers SA-APR-OCT
-- Entry: python run_cyc006_gpu.py (data already loaded; use --analyze-only for results)
+### CYC-006 (864 records) — Rebalance Timing Study
+- 120 factors × 10 timing variants (quarterly/semi-annual/annual)
+- KEY: Annual Jun 30 (A-Q2) wins for most factors (26/120)
+- NOTE: 864 saved (some factors only available for certain timings)
 
-### CYC-006b (1,077 records) - Staggered Tranche Rebalancing
-- 9 tranche configs x 139 factors (CPU post-processing, no GPU needed)
-- KEY FINDING: 2T-MAR-SEP (50/50, Mar31+Sep30) wins most with +0.221 avg OBQ gain
-- 4T-MAR-JUN-SEP-DEC improves most individual factors (90/119)
-- jcn_qarp reaches OBQ 0.922 with 2T-JUN-DEC (vs 0.828 SA6 baseline)
-- Entry: python run_cyc006b_tranche.py (--analyze for results, takes 50 seconds)
+### CYC-006b (1077 records) — Staggered Tranche Rebalancing
+- 9 tranche configs × 120 factors (CPU blending of CYC-006 equity curves)
+- KEY: 2T-MAR-SEP wins most (+0.221 avg OBQ gain)
+- jcn_qarp reaches OBQ 0.922 with 2T-JUN-DEC
 
-## NEXT PLANNED CYCLES
+### CYC-007 (9 records) — Sector-Optimized Composites
+- 9 per-sector multi-factor composites (HC, IT, FIN, CD, CS, IND, MAT)
 
-### CYC-007 (NOT STARTED) - Sector-Optimized Composites
-Build per-sector multi-factor composite scores combining the best within-sector factors:
-1. Health Care Quality: OCF/Assets + EBIT/Assets + F-Score (all strong within HC)
-2. IT Alpha: FCF Margin + Rule of 40 + JCN Alpha Trifecta (ICIR 2.151 for FCF Margin in IT)
-3. Financials ROE: ROE + Retained Earnings/TA (flip Capital Adequacy - it inverted)
-4. Energy Cycle: Mid-Cycle FCF Yield + Momentum
-5. REIT FFO: FFO Proxy Yield + OCF/Assets + Dividend Growth
-Use: run as CYC-005b format (sector mask GPU + within-sector quintile backtest)
+**TOTAL BANK: 2,854 factor records**
 
-## CRITICAL BUGS FIXED (know these for future work)
+## SESSION WORK (2026-05-13)
 
-1. Symbol format: filings_ttm uses AAPL, v_backtest_prices uses AAPL.US
-   Fix is in: engine/cyc004_score_compute.py and engine/gpu_data_loader.py
-   Every new score pipeline MUST strip/add .US when joining price data
+### App Improvements
+1. **Project-local venv** — `.venv/` inside project, isolated from shared `.venv-obq`
+   - Run with: `launch.bat` or `.venv\Scripts\python main.py`
+   - `setup_venv.bat` for first-time setup on new machine
 
-2. Bulk insert speed: save_factor_model() now accepts _shared_con parameter
-   Pattern: open _get_bank() once, pass as _shared_con=con to all saves
-   34 rec/sec vs 0.28 rec/sec without shared connection
+2. **Factor Models tab — Strategy Log preloaded**
+   - Bank data embedded in HTML at serve time (`window.__FACTOR_BANK__`)
+   - Zero-latency load on tab switch — no async fetch needed
+   - 6 real research cycles pre-seeded in Research Cycles panel
 
-3. App factor log was limiting to 500 records, raised to 2000
+3. **Tearsheet fully populated** — all fields for all cycles:
+   - `avg_portfolio_size`, `avg_beat_universe`, `avg_lag_universe`
+   - `median_factor_score`, `avg_market_cap`
+   - Added to GPU engine via stock-level per-bucket aggregation
+   - All 5 cycles re-run to populate new fields
 
-4. Portfolio tab was showing 93 legacy PM-* records from May 1-5 session
-   Fixed in portfolio_lab.js: hides records with created_at < 2026-05-07
+4. **Universe column fully populated**
+   - `ann_vol`, `calmar`, `best_month`, `worst_month` computed from universe_equity_json
+   - Enriched on-the-fly in JS for existing records
 
-## ENCYCLOPEDIA v2.1 STATUS
+5. **Period Returns Heatmap** redesigned
+   - Years on Y-axis, periods on X-axis (was: dates on X, buckets on Y)
+   - One chart per quintile (Q1-Q5), stacked vertically
 
-Location: D:/OBQ_AI/OBQ_Encyclopedia_v2/
-- 140+ factor chapters (Parts II-XIV) + Part XV (15 timing chapters)
-- Part XV has 10 CYC-006 chapters + 5 CYC-006b chapters
-- Full PDF: ~/Downloads/OBQ_Encyclopedia_v2_20260512_*.pdf (1.7 MB)
-- Timing PDF: ~/Downloads/OBQ_CYC006_Rebalance_Timing_Study_*.pdf (0.1 MB)
+6. **Portfolio Models tab**
+   - New staggered tranche engine: `engine/tranche_portfolio_backtest.py`
+   - 28-stock, 4-tranche, quarterly stagger, 1-year hold, equal-weight
+   - Trial run: JCN Full Composite saved as `PM-JCNFUL-20260513-59B3`
 
-Regenerate commands:
-  cd encyclopedia_v2/generator
-  python generate_all.py          # factor chapters
-  python generate_cyc006.py       # CYC-006 timing Ch 1-10
-  python generate_cyc006b.py      # CYC-006b tranche Ch 11-15
-  python build_pdf.py             # full encyclopedia PDF
-  python build_cyc006_pdf.py      # standalone timing PDF
+### Code Changes
+- `engine/gpu_factor_compute.py` — stock-level aggregations + `market_cap_gpu` param
+- `engine/gpu_batch_runner.py` — passes `market_cap_gpu` to all GPU calls
+- `engine/strategy_bank.py` — `created_at::VARCHAR AS created_at` alias fix
+- `engine/tranche_portfolio_backtest.py` — NEW: staggered tranche portfolio engine
+- `run_cyc005_gpu.py`, `run_cyc006_gpu.py`, `run_cyc007_gpu.py` — `market_cap_gpu` added
+- `run_cyc006b_tranche.py` — full tearsheet data (bucket_metrics, tortoriello, dates, ic_data, period_data)
+- `run_pm_tranche_trial.py` — NEW: trial portfolio backtest runner
+- `gui/app.py` — preloaded bank data in HTML, NaN sanitizer for factor bank endpoint
+- `gui/templates/index.html` — NEW: Flask template with `__FACTOR_BANK__` injection
+- `gui/static/index.html` — Strategy Log columns fixed, heatmap updated
+- `gui/static/js/factor_lab.js` — JS enrichment for missing fields, sync bank load
+- `gui/static/js/factor_tearsheet.js` — Period heatmap redesigned (year×period grid)
+- `gui/static/js/cycles_lab.js` — 6 real cycles seeded, sort state for Strategy Log
+- `gui/static/js/portfolio_lab.js` — preloaded from `__PM_BANK__`
+- `gui/static/js/tabs.js` — explicit `flLoadBank()` + `flLoadCycles()` call
+- `launch.bat`, `setup_venv.bat`, `requirements.txt` — NEW: project venv support
 
-## GITHUB
-- Repo: github.com:alexbernal0/OBQ_FactorLab
-- Branch: main
-- All work committed and pushed
-- Latest commit: see git log --oneline -1
+## GITHUB BACKUP NOTE
+The `results/` folder contains:
+- `factor_bank_scalars.parquet` — all 2,854 records, scalar columns only (0.2MB)
+- `portfolio_bank_scalars.parquet` — 94 portfolio models, scalar columns only
+
+Full tearsheet JSON blobs (5GB total) are local only at:
+`D:/OBQ_AI/OBQ_FactorLab_Bank/`
+Back these up to external drive or cloud separately.
+
+## NEXT PLANNED WORK
+- Portfolio Model batch run: all top-performing factors through 28-stock 4-tranche model
+- Tearsheet format matching paperswithbacktest style (user to locate reference folder)
+- CYC-008: potential new research cycle

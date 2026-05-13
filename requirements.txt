@@ -1,0 +1,29 @@
+# OBQ FactorLab — project-local venv requirements
+# Install with:  .venv\Scripts\pip install -r requirements.txt
+
+# ── Core data / numeric ───────────────────────────────────────────────────────
+numpy==2.2.6
+pandas==2.3.3
+scipy==1.17.1
+
+# ── Database ──────────────────────────────────────────────────────────────────
+duckdb==1.4.4
+
+# ── GPU (CuPy for RTX 3090 / CUDA 12.x) ─────────────────────────────────────
+cupy-cuda12x==14.0.1
+
+# ── Web UI ────────────────────────────────────────────────────────────────────
+flask==3.1.3
+pywebview==6.1
+
+# ── Charts / reporting ────────────────────────────────────────────────────────
+matplotlib==3.10.8
+reportlab==4.4.10
+fpdf2==2.8.7
+markdown-pdf==1.13.1
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+python-dotenv==1.1.0
+
+# ── SSE streaming (portfolio run progress) ────────────────────────────────────
+sse-starlette==3.3.4

@@ -782,29 +782,17 @@ def load_all_data(
             cyc4_cols = [r[0] for r in cyc4_cols_raw]
 
             if cyc4_cols:
-                cols_sql = ", ".join(f"s.{c}" for c in cyc4_cols)
-                # ASOF join: for each rebalance date, use the latest score
-                # with month_date <= rebalance date (within 1 year).
-                # This makes CYC-004 scores available at quarterly/annual dates
-                # by carrying forward the most recent semi-annual score.
+                cols_sql = ", ".join(cyc4_cols)
+                # Direct IN query — CYC-004 stored at exact SA dates; append .US for VRAM key
                 rows = fund_con.execute(f"""
-                    WITH rebal_dates AS (
-                        SELECT UNNEST([{dates_sql}]::DATE[]) AS rebal_date
-                    ),
-                    asof_scores AS (
-                        SELECT
-                            r.rebal_date,
-                            CASE WHEN s.symbol LIKE '%.US' THEN s.symbol
-                                 ELSE CONCAT(s.symbol, '.US') END AS symbol,
-                            {cols_sql}
-                        FROM rebal_dates r
-                        ASOF JOIN scores.obq_cyc004_scores s
-                        ON r.rebal_date >= s.month_date
-                        WHERE DATEDIFF('day', s.month_date, r.rebal_date) <= 366
-                    )
-                    SELECT symbol, rebal_date::VARCHAR, {', '.join(cyc4_cols)}
-                    FROM asof_scores
-                    ORDER BY rebal_date, symbol
+                    SELECT
+                        CASE WHEN symbol LIKE '%.US' THEN symbol
+                             ELSE CONCAT(symbol, '.US') END AS symbol,
+                        month_date::VARCHAR AS date_str,
+                        {cols_sql}
+                    FROM scores.obq_cyc004_scores
+                    WHERE month_date IN ({dates_sql})
+                    ORDER BY month_date, symbol
                 """).fetchall()
 
                 for row in rows:
@@ -836,24 +824,17 @@ def load_all_data(
             """).fetchall()
             cyc5_cols = [r[0] for r in cyc5_cols_raw]
             if cyc5_cols:
-                cols5_sql = ", ".join(f"s.{c}" for c in cyc5_cols)
+                cols5_sql = ", ".join(cyc5_cols)
+                # Direct IN query — CYC-005 stored at exact SA dates; append .US for VRAM key
                 rows5 = fund_con.execute(f"""
-                    WITH rebal_dates AS (
-                        SELECT UNNEST([{dates_sql}]::DATE[]) AS rebal_date
-                    ),
-                    asof_scores AS (
-                        SELECT r.rebal_date,
-                            CASE WHEN s.symbol LIKE '%.US' THEN s.symbol
-                                 ELSE CONCAT(s.symbol, '.US') END AS symbol,
-                            {cols5_sql}
-                        FROM rebal_dates r
-                        ASOF JOIN scores.obq_cyc005_scores s
-                        ON r.rebal_date >= s.month_date
-                        WHERE DATEDIFF('day', s.month_date, r.rebal_date) <= 366
-                    )
-                    SELECT symbol, rebal_date::VARCHAR, {', '.join(cyc5_cols)}
-                    FROM asof_scores
-                    ORDER BY rebal_date, symbol
+                    SELECT
+                        CASE WHEN symbol LIKE '%.US' THEN symbol
+                             ELSE CONCAT(symbol, '.US') END AS symbol,
+                        month_date::VARCHAR AS date_str,
+                        {cols5_sql}
+                    FROM scores.obq_cyc005_scores
+                    WHERE month_date IN ({dates_sql})
+                    ORDER BY month_date, symbol
                 """).fetchall()
                 for row in rows5:
                     sym = row[0]; date_str = row[1]
@@ -869,6 +850,49 @@ def load_all_data(
                 log.info(f"  CYC-005: {n5} score columns loaded")
         else:
             log.info("  CYC-005 scores not yet computed — skipping")
+
+        # CYC-007 composite scores (same load pattern)
+        tbl7_exists = fund_con.execute("""
+            SELECT COUNT(*) FROM information_schema.tables
+            WHERE table_schema='scores' AND table_name='obq_cyc007_scores'
+        """).fetchone()[0] > 0
+
+        if tbl7_exists:
+            log.info("  Loading CYC-007 composite scores from obq_fundamentals.duckdb...")
+            cyc7_cols_raw = fund_con.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema='scores' AND table_name='obq_cyc007_scores'
+                  AND column_name NOT IN ('symbol','month_date','gic_sector')
+                ORDER BY ordinal_position
+            """).fetchall()
+            cyc7_cols = [r[0] for r in cyc7_cols_raw]
+            if cyc7_cols:
+                cols7_sql = ", ".join(cyc7_cols)
+                # Direct IN query — CYC-007 stored at exact SA dates; append .US for VRAM key
+                rows7 = fund_con.execute(f"""
+                    SELECT
+                        CASE WHEN symbol LIKE '%.US' THEN symbol
+                             ELSE CONCAT(symbol, '.US') END AS symbol,
+                        month_date::VARCHAR AS date_str,
+                        {cols7_sql}
+                    FROM scores.obq_cyc007_scores
+                    WHERE month_date IN ({dates_sql})
+                    ORDER BY month_date, symbol
+                """).fetchall()
+                for row in rows7:
+                    sym = row[0]; date_str = row[1]
+                    for i, fc in enumerate(cyc7_cols):
+                        val = row[2 + i]
+                        if val is not None and not (isinstance(val, float) and math.isnan(val)):
+                            if fc not in cyc004_scores:
+                                cyc004_scores[fc] = {}
+                            if date_str not in cyc004_scores[fc]:
+                                cyc004_scores[fc][date_str] = {}
+                            cyc004_scores[fc][date_str][sym] = float(val)
+                n7 = sum(1 for k in cyc004_scores if k.startswith('cyc7_'))
+                log.info(f"  CYC-007: {n7} composite columns loaded")
+        else:
+            log.info("  CYC-007 scores not yet computed — skipping")
 
         fund_con.close()
     except Exception as e:

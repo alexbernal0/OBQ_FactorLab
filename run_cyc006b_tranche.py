@@ -299,6 +299,112 @@ def blend_tranches(
     q1_mdd    = _max_dd(q1_eq)
     q1_calmar = q1_cagr / max(abs(q1_mdd), 0.001)
 
+    # Actual periods-per-year from date span
+    # all_dates spans from earliest to latest — use actual range
+    actual_ppy = float(n_periods) / max(len(set(d[:4] for d in all_dates)), 1)
+
+    # Per-bucket full metrics + tortoriello fields (needed by tearsheet)
+    bucket_metrics_full = {}
+    tortoriello_full    = {}
+
+    for b in range(1, n_buckets_actual + 1):
+        bid   = str(b)
+        b_eq  = blended_equity.get(bid, [1.0])
+        b_rets= blended_bucket_rets.get(bid, [])
+        b_cagr= bucket_cagrs.get(bid, 0.0)
+        b_sharpe = _sharpe(b_rets, actual_ppy)
+        b_mdd    = _max_dd(b_eq)
+        b_calmar = b_cagr / max(abs(b_mdd), 0.001)
+
+        # Annualized std dev
+        r_arr = np.array(b_rets)
+        std_period = float(r_arr.std()) if len(r_arr) > 1 else 0.0
+        std_ann    = std_period * np.sqrt(actual_ppy)
+
+        # Beta & alpha vs universe
+        univ_arr = np.array(univ_rets[:len(b_rets)])
+        b_arr    = np.array(b_rets[:len(univ_arr)])
+        if len(b_arr) > 3 and univ_arr.std() > 1e-8:
+            cov  = float(np.cov(b_arr, univ_arr)[0, 1])
+            beta = cov / float(univ_arr.var())
+            alpha_period = float(b_arr.mean()) - beta * float(univ_arr.mean())
+            alpha_ann    = (1 + alpha_period) ** actual_ppy - 1
+        else:
+            beta = None; alpha_ann = None
+
+        # % periods beats universe
+        pairs = min(len(b_rets), len(univ_rets))
+        pct_1y = sum(1 for i in range(pairs) if b_rets[i] > univ_rets[i]) / max(pairs, 1)
+
+        # Avg excess return per period (annualized)
+        avg_excess = float(np.mean([b_rets[i] - univ_rets[i] for i in range(pairs)])) * actual_ppy if pairs > 0 else None
+
+        # Max single-period gain / loss
+        max_gain = float(max(b_rets)) if b_rets else None
+        max_loss = float(min(b_rets)) if b_rets else None
+
+        bucket_metrics_full[bid] = {
+            'cagr':            round(b_cagr, 4),
+            'sharpe':          round(b_sharpe, 3),
+            'max_dd':          round(b_mdd, 4),
+            'calmar':          round(b_calmar, 3),
+            'n_obs':           n_periods,
+            'terminal_wealth': round(b_eq[-1] * 10000, 0) if b_eq else None,
+            'ann_vol':         round(float(std_ann), 4),
+        }
+        tortoriello_full[bid] = {
+            'terminal_wealth':   round(b_eq[-1] * 10000, 0) if b_eq else None,
+            'avg_excess_vs_univ': round(avg_excess, 4) if avg_excess is not None else None,
+            'pct_1y_beats_univ': round(pct_1y, 4),
+            'pct_3y_beats_univ': None,   # would need 3yr rolling windows
+            'max_gain':          round(max_gain, 4) if max_gain is not None else None,
+            'max_loss':          round(max_loss, 4) if max_loss is not None else None,
+            'std_dev_ann':       round(float(std_ann), 4),
+            'beta_vs_univ':      round(beta, 3) if beta is not None else None,
+            'alpha_vs_univ':     round(alpha_ann, 4) if alpha_ann is not None else None,
+            'avg_portfolio_size': None,
+            'avg_beat_universe': None,
+            'avg_lag_universe':  None,
+            'median_factor_score': None,
+            'avg_market_cap':    None,
+        }
+
+    # Universe metrics
+    univ_cagr   = _cagr(univ_eq, actual_ppy)
+    univ_arr    = np.array(univ_rets)
+    univ_std    = float(univ_arr.std()) * np.sqrt(actual_ppy) if len(univ_arr) > 1 else 0.0
+    univ_best   = float(max(univ_rets)) if univ_rets else None
+    univ_worst  = float(min(univ_rets)) if univ_rets else None
+    n_years_actual = n_periods / actual_ppy
+    universe_metrics = {
+        'cagr':            round(univ_cagr, 4),
+        'sharpe':          round(_sharpe(univ_rets, actual_ppy), 3),
+        'max_dd':          round(_max_dd(univ_eq), 4),
+        'ann_vol':         round(univ_std, 4),
+        'best_month':      round(univ_best, 4) if univ_best is not None else None,
+        'worst_month':     round(univ_worst, 4) if univ_worst is not None else None,
+        'terminal_wealth': round(univ_eq[-1] * 10000, 0),
+        'n_years':         round(n_years_actual, 2),
+        'calmar':          round(univ_cagr / max(abs(_max_dd(univ_eq)), 0.001), 3),
+    }
+
+    # Dates: use the union of all constituent dates that had valid data
+    # all_dates was built as the sorted union of all constituent dates
+    dates_out = sorted(set(all_dates))[:n_periods]
+
+    # IC data list for tearsheet
+    ic_data_out = [{'date': dates_out[i] if i < len(dates_out) else '', 'ic_value': round(v, 4)}
+                   for i, v in enumerate(ic_vals)]
+
+    # Period data for heatmap: [{date, q1_ret, q2_ret, ...}, ...]
+    period_data_out = []
+    for i, d in enumerate(dates_out):
+        entry = {'date': d}
+        for b in range(1, n_buckets_actual + 1):
+            rets_b = blended_bucket_rets.get(str(b), [])
+            entry['q'+str(b)+'_ret'] = round(float(rets_b[i]), 6) if i < len(rets_b) else None
+        period_data_out.append(entry)
+
     return {
         'n_obs':           n_periods,
         'icir':            round(icir, 4),
@@ -318,6 +424,14 @@ def blend_tranches(
         'obq_fund_score':  round(float(np.clip(obq, -1.0, 1.0)), 4),
         'n_stocks_avg':    0.0,
         'bucket_equity':   {bid: [round(v, 6) for v in eq] for bid, eq in blended_equity.items()},
+        # Full data for tearsheet
+        'bucket_metrics':   bucket_metrics_full,
+        'tortoriello':      tortoriello_full,
+        'universe_metrics': universe_metrics,
+        'universe_equity':  [round(v, 6) for v in univ_eq],
+        'dates':            dates_out,
+        'ic_data':          ic_data_out,
+        'period_data':      period_data_out,
     }
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -391,14 +505,15 @@ def run_tranche_analysis(dry_run: bool = False, factor_filter: Optional[str] = N
                     'config':         config_dict,
                     'factor_metrics': metrics,
                     'bucket_equity':  metrics.pop('bucket_equity', {}),
-                    'bucket_metrics': {},
-                    'ic_data':        [],
-                    'period_data':    [],
+                    'bucket_metrics': metrics.pop('bucket_metrics', {}),
+                    'ic_data':        metrics.pop('ic_data', []),
+                    'dates':          metrics.pop('dates', []),
+                    'universe_metrics': metrics.pop('universe_metrics', {}),
+                    'universe_equity':  metrics.pop('universe_equity', []),
+                    'tortoriello':    metrics.pop('tortoriello', {}),
+                    'period_data':    metrics.pop('period_data', []),
                     'annual_ret_by_bucket': {},
-                    'tortoriello':    {},
-                    'universe_metrics': {},
-                    'universe_equity':  [],
-                    'universe_rets':    [],
+                    'universe_rets':  [],
                     'fitness': {
                         'staircase_score':  metrics.get('staircase_score', 0),
                         'alpha_win_rate':   metrics.get('alpha_win_rate', 0),

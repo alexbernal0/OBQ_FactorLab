@@ -40,7 +40,7 @@ load_dotenv(ROOT / ".env")
 app = Flask(__name__,
             static_folder=str(ROOT / "gui" / "static"),
             static_url_path="/static",
-            template_folder=str(ROOT / "gui"))
+            template_folder=str(ROOT / "gui" / "templates"))
 
 # ── Active run tracking ───────────────────────────────────────────────────
 _runs: dict = {}         # run_id -> {status, result, log_q}
@@ -49,7 +49,34 @@ _run_lock = threading.Lock()
 
 @app.route("/")
 def index():
-    return app.send_static_file("index.html")
+    """Serve index with bank data pre-injected — zero fetch latency on tab open."""
+    import math as _math
+
+    def _clean(v):
+        if isinstance(v, float) and (_math.isnan(v) or _math.isinf(v)):
+            return None
+        return v
+
+    def _clean_model(m):
+        return {k: _clean(v) for k, v in m.items()}
+
+    try:
+        from engine.strategy_bank import get_all_models
+        factor_models = [_clean_model(m) for m in get_all_models(limit=2000)]
+    except Exception:
+        factor_models = []
+
+    try:
+        from engine.portfolio_bank import get_all_portfolio_models
+        pm_models = [_clean_model(m) for m in get_all_portfolio_models(limit=500)]
+    except Exception:
+        pm_models = []
+
+    return render_template(
+        "index.html",
+        factor_bank_json=json.dumps(factor_models),
+        pm_bank_json=json.dumps(pm_models),
+    )
 
 
 # ── Config endpoints ────────────────────────────────────────────────────────
@@ -731,7 +758,20 @@ def factor_bank_model(strategy_id):
         from engine.strategy_bank import get_model
         m = get_model(strategy_id)
         if not m: return jsonify({"error": "not found"}), 404
-        return jsonify(m)
+        # Use json.dumps with allow_nan=False so NaN → null (browsers reject NaN literals)
+        import math as _math
+        def _clean(obj):
+            if isinstance(obj, dict):  return {k: _clean(v) for k, v in obj.items()}
+            if isinstance(obj, list):  return [_clean(v) for v in obj]
+            if isinstance(obj, float) and (_math.isnan(obj) or _math.isinf(obj)): return None
+            # Pandas Timestamp / numpy types → plain Python
+            if hasattr(obj, 'isoformat'): return obj.isoformat()
+            if hasattr(obj, 'item'):      return obj.item()  # numpy scalar
+            return obj
+        return app.response_class(
+            json.dumps(_clean(m)),
+            mimetype="application/json"
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

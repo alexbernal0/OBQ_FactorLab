@@ -364,7 +364,7 @@ def get_all_models(limit: int = 2000,
         ) else "obq_fund_score"
 
         rows = con.execute(f"""
-            SELECT strategy_id, created_at::VARCHAR, run_label, score_column,
+            SELECT strategy_id, created_at::VARCHAR AS created_at, run_label, score_column,
                    n_buckets, hold_months, start_date, end_date, cap_tier,
                    ic_mean, icir, ic_hit_rate, monotonicity_score, spearman_rho,
                    quintile_spread_cagr, q1_cagr, q1_sharpe, q1_max_dd, q1_surefire, q1_calmar,

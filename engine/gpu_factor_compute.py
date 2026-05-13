@@ -310,6 +310,7 @@ def run_factor_on_gpu(
     cap_mask_gpu: Optional["cp.ndarray"] = None,  # optional additional cap-tier mask
     min_n_stocks: int = 10,
     sector_gpu: Optional["cp.ndarray"] = None,    # optional (T,S) int8 GICS sector IDs
+    market_cap_gpu: Optional["cp.ndarray"] = None, # optional (n_periods, max_stocks) market cap
 ) -> dict:
     """
     Run a complete quintile factor backtest on GPU.
@@ -359,6 +360,84 @@ def run_factor_on_gpu(
         score_order = _argsort_descending(scores_gpu, both_valid)
 
     buckets = _assign_buckets_from_order(score_order, both_valid, nv_eff, n_buckets)
+
+    # ── Stock-level per-bucket aggregations (GPU vectorized) ────────────────
+    # Compute while buckets array is hot in VRAM — these feed tearsheet fields
+    # that were previously None: avg_portfolio_size, avg_beat_universe,
+    # avg_lag_universe, median_factor_score, avg_market_cap.
+    try:
+        _nv_cpu   = cp.asnumpy(nv_eff).astype(int)          # effective count after cap_mask
+        _max_nv   = int(_nv_cpu.max()) if len(_nv_cpu) > 0 else 0  # use max to slice arrays
+        _bk_cpu   = cp.asnumpy(buckets)                      # (n_periods, max_stocks) int8
+        _ret_cpu  = cp.asnumpy(cp.where(both_valid, returns_gpu, cp.float64(0.0)))
+        _sc_cpu   = cp.asnumpy(cp.where(both_valid, scores_gpu, cp.float64(cp.nan)))
+        _val_cpu  = cp.asnumpy(both_valid)                   # bool mask
+
+        # Universe return per period = mean of all valid stocks' returns (using bool mask)
+        _univ_ret_cpu = np.array([
+            float(_ret_cpu[t][_val_cpu[t]].mean()) if _val_cpu[t].any() else 0.0
+            for t in range(len(_nv_cpu))
+        ])
+
+        # Per-bucket aggregations: list of dicts keyed by bucket str "1".."n"
+        _sl_agg = {str(b): {
+            "sizes": [], "beats": [], "lags": [],
+            "scores": [], "mktcaps": [],
+        } for b in range(1, n_buckets + 1)}
+
+        # market_cap CPU array (optional)
+        _mc_cpu = cp.asnumpy(market_cap_gpu) if market_cap_gpu is not None else None
+
+        for t in range(len(_nv_cpu)):
+            nv_t = _nv_cpu[t]
+            if nv_t == 0:
+                continue
+            # Use full valid mask to correctly handle sector-filtered runs
+            # (all valid stocks are indexed 0..max_stocks; use bool mask, not slice)
+            bk_t   = _bk_cpu[t]
+            ret_t  = _ret_cpu[t]
+            sc_t   = _sc_cpu[t]
+            val_t  = _val_cpu[t]
+            univ_r = _univ_ret_cpu[t]
+            mc_t   = _mc_cpu[t] if _mc_cpu is not None else None
+
+            for b in range(1, n_buckets + 1):
+                mask = (bk_t == b) & val_t
+                n_b  = int(mask.sum())
+                if n_b == 0:
+                    continue
+                bid = str(b)
+                _sl_agg[bid]["sizes"].append(n_b)
+                r_b = ret_t[mask]
+                _sl_agg[bid]["beats"].append(int((r_b > univ_r).sum()))
+                _sl_agg[bid]["lags"].append(int((r_b <= univ_r).sum()))
+                sc_b = sc_t[mask]
+                sc_b = sc_b[~np.isnan(sc_b)]
+                if len(sc_b) > 0:
+                    _sl_agg[bid]["scores"].append(float(np.median(sc_b)))
+                if mc_t is not None:
+                    mc_b = mc_t[mask]
+                    mc_b = mc_b[~np.isnan(mc_b)]
+                    if len(mc_b) > 0:
+                        _sl_agg[bid]["mktcaps"].append(float(np.mean(mc_b)))
+
+        _stock_level = {}
+        for b in range(1, n_buckets + 1):
+            bid = str(b)
+            ag  = _sl_agg[bid]
+            _stock_level[bid] = {
+                "avg_portfolio_size": round(float(np.mean(ag["sizes"])),  1) if ag["sizes"]  else None,
+                "avg_beat_universe":  round(float(np.mean(ag["beats"])),  1) if ag["beats"]  else None,
+                "avg_lag_universe":   round(float(np.mean(ag["lags"])),   1) if ag["lags"]   else None,
+                "median_factor_score":round(float(np.mean(ag["scores"])), 2) if ag["scores"] else None,
+                "avg_market_cap":     round(float(np.mean(ag["mktcaps"])),0) if ag["mktcaps"] else None,
+            }
+    except Exception as _sl_err:
+        _stock_level = {str(b): {
+            "avg_portfolio_size": None, "avg_beat_universe": None,
+            "avg_lag_universe":   None, "median_factor_score": None,
+            "avg_market_cap":     None,
+        } for b in range(1, n_buckets + 1)}
 
     # Score ranks (float64) still needed for Spearman IC
     score_ranks = _batch_rank_2d(scores_gpu, both_valid) if lower_better \
@@ -668,14 +747,28 @@ def run_factor_on_gpu(
     qn_cagr  = qnm.get("cagr", 0.0) or 0.0
     spread_cagr = q1_cagr - qn_cagr
 
-    # Universe metrics (simple)
-    univ_cagr = _cagr(universe_eq, periods_per_year)
+    # Universe metrics — full set for tearsheet Universe column
+    univ_cagr   = _cagr(universe_eq, periods_per_year)
     univ_sharpe = _sharpe(universe_rets, periods_per_year)
+    univ_mdd    = float(_max_dd(universe_eq))
+    # Ann vol from period std dev
+    _u_arr      = np.array(universe_rets, dtype=np.float64)
+    univ_ann_vol= float(_u_arr.std() * np.sqrt(periods_per_year)) if len(_u_arr) > 1 else 0.0
+    # Calmar = CAGR / |MaxDD|
+    univ_calmar = round(univ_cagr / abs(univ_mdd), 3) if univ_mdd != 0 else 0.0
+    # Best/worst single period
+    univ_best   = float(_u_arr.max()) if len(_u_arr) > 0 else None
+    univ_worst  = float(_u_arr.min()) if len(_u_arr) > 0 else None
     universe_metrics = {
-        "cagr": round(univ_cagr, 4),
-        "sharpe": round(univ_sharpe, 3),
-        "max_dd": round(float(_max_dd(universe_eq)), 4),
+        "cagr":            round(univ_cagr,    4),
+        "sharpe":          round(univ_sharpe,  3),
+        "max_dd":          round(univ_mdd,     4),
         "terminal_wealth": round(float(10000 * universe_eq[-1]), 0),
+        "ann_vol":         round(univ_ann_vol, 4),
+        "calmar":          univ_calmar,
+        "best_month":      round(univ_best,  4) if univ_best  is not None else None,
+        "worst_month":     round(univ_worst, 4) if univ_worst is not None else None,
+        "n_years":         round(len(universe_rets) / periods_per_year, 2),
     }
 
     # ── Sector attribution (GPU vectorized aggregation) ──────────────────────
@@ -736,6 +829,10 @@ def run_factor_on_gpu(
         n_buckets=n_buckets,
         periods_per_year=periods_per_year,
     )
+    # Merge stock-level fields into tortoriello
+    for _b, _sl in _stock_level.items():
+        if _b in tortoriello:
+            tortoriello[_b].update(_sl)
 
     elapsed_s = (time.perf_counter() - t0)
 
@@ -820,6 +917,7 @@ def run_combo_on_gpu(
     hold_months: int = 6,
     cap_mask_gpu: Optional["cp.ndarray"] = None,
     sector_gpu: Optional["cp.ndarray"] = None,
+    market_cap_gpu: Optional["cp.ndarray"] = None,
 ) -> dict:
     """
     Run a two-factor combo backtest on GPU.
@@ -850,6 +948,7 @@ def run_combo_on_gpu(
         score_column=f"combo_{combo_id}",
         cap_mask_gpu=cap_mask_gpu,
         sector_gpu=sector_gpu,
+        market_cap_gpu=market_cap_gpu,
     )
 
 

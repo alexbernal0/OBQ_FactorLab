@@ -204,16 +204,37 @@
     _renderBankRows(_bankData, key);
   };
 
+  // ── Sort state for Strategy Log ──────────────────────────────────────────────
+  let _bankSortKey = "obq_fund_score";
+  let _bankSortDir = -1;  // -1 = descending, +1 = ascending
+
+  window.flSortBank = function (key) {
+    if (_bankSortKey === key) {
+      _bankSortDir *= -1;  // toggle direction on repeated click
+    } else {
+      _bankSortKey = key;
+      _bankSortDir = (key === "strategy_id") ? 1 : -1;  // IDs sort asc by default
+    }
+    // Update arrow indicators
+    document.querySelectorAll("[id^='fl-sort-arrow-']").forEach(el => { el.textContent = ""; });
+    const arrow = document.getElementById("fl-sort-arrow-" + key);
+    if (arrow) arrow.textContent = _bankSortDir === -1 ? " ▼" : " ▲";
+    // Re-render with new sort
+    _renderBankRows(_bankData, _bankSortKey);
+  };
+
   function _renderBankRows(models, sortKey) {
     const body  = document.getElementById("fl-bank-body");
     const empty = document.getElementById("fl-bank-empty");
     const count = document.getElementById("fl-bank-count");
     if (!body) return;
 
-    // Cycle filter: reads from dropdown #fl-log-cycle if present
-    const cycleEl    = document.getElementById("fl-log-cycle");
-    const cycleFilter = cycleEl ? cycleEl.value : "all";
+    // Use current sort state (sortKey param may be stale if called from flResortLog)
+    const key = _bankSortKey || sortKey || "obq_fund_score";
 
+    // Cycle filter
+    const cycleEl     = document.getElementById("fl-log-cycle");
+    const cycleFilter = cycleEl ? cycleEl.value : "all";
     let filtered = models;
     if (cycleFilter && cycleFilter !== "all") {
       filtered = models.filter(m => (m.run_label || "").includes(cycleFilter));
@@ -228,66 +249,73 @@
     }
     if (empty) empty.style.display = "none";
 
-    // Sort
+    // Sort — nulls always last
+    const dir = _bankSortDir;
     const sorted = [...filtered].sort((a, b) => {
-      if (sortKey === "date") {
-        return (b.saved_at || b.strategy_id || "").localeCompare(a.saved_at || a.strategy_id || "");
-      }
-      const av = a[sortKey]; const bv = b[sortKey];
-      if (av == null) return 1; if (bv == null) return -1;
-      return bv - av;
+      const av = a[key]; const bv = b[key];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "string") return dir * av.localeCompare(bv);
+      return dir * (bv - av);
     });
 
-    function pct2(v,d=1) { if(v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
-    function num2(v,d=2) { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
+    // Update arrow on current sort column
+    document.querySelectorAll("[id^='fl-sort-arrow-']").forEach(el => { el.textContent = ""; });
+    const arrow = document.getElementById("fl-sort-arrow-" + key);
+    if (arrow) arrow.textContent = dir === -1 ? " ▼" : " ▲";
 
-    // Chunked rendering — prevents UI freeze with 664 rows.
-    // First 150 rows render immediately; the rest append in background chunks.
+    function pct(v,d=1) { if(v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
+    function num(v,d=2) { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
+
     body.innerHTML = "";
     const CHUNK = 150;
 
     function _appendChunk(startIdx) {
       const frag = document.createDocumentFragment();
-      const end   = Math.min(startIdx + CHUNK, sorted.length);
+      const end  = Math.min(startIdx + CHUNK, sorted.length);
       for (let ci = startIdx; ci < end; ci++) {
-        const m   = sorted[ci];
-        const tr  = document.createElement("div");
+        const m  = sorted[ci];
+        const tr = document.createElement("div");
         tr.className = "fl-tr";
 
-        const spread   = m.quintile_spread_cagr;
         const fund     = m.obq_fund_score;
         const alphaWin = m.alpha_win_rate;
+        const spread   = m.quintile_spread_cagr;
         const stair    = m.staircase_score;
-        const bear     = m.bear_score;
-        const bull     = m.bull_score;
-        const calm     = m.q1_calmar;
-
-        const fundCol  = fund!=null   ? (fund>=0.5?"g":fund>=0.3?"":"r")   : "";
-        const spreadCol= spread!=null ? (spread>=0.06?"g":spread>=0?"":"r") : "";
-        const bearCol  = bear!=null   ? (bear>=0.02?"g":bear>=0?"":"r")    : "";
-        const bullCol  = bull!=null   ? (bull>=0.02?"g":bull>=0?"":"r")    : "";
-        const calmCol  = calm!=null   ? (calm>=0.5?"g":calm>=0.2?"":"r")   : "";
+        const mono     = m.monotonicity_score;
+        const avgAlpha = m.avg_annual_alpha;
+        const icir     = m.icir;
+        const hitRate  = m.ic_hit_rate;
         const sid      = _esc(m.strategy_id || "");
 
+        const fundCol    = fund!=null    ? (fund>=0.5?"g":fund>=0.3?"":"r")       : "";
+        const winCol     = alphaWin!=null? (alphaWin>=0.6?"g":alphaWin>=0.5?"":"r"): "";
+        const spreadCol  = spread!=null  ? (spread>=0.06?"g":spread>=0?"":"r")    : "";
+        const stairCol   = stair!=null   ? (stair>=0.02?"g":stair>=0?"":"r")      : "";
+        const monoCol    = mono!=null    ? (mono>=0.8?"g":mono>=0.6?"":"r")       : "";
+        const alphaCol   = avgAlpha!=null? (avgAlpha>=0.03?"g":avgAlpha>=0?"":"r"): "";
+        const icirCol    = icir!=null    ? (icir>=1.0?"g":icir>=0.5?"":"r")       : "";
+        const hitCol     = hitRate!=null ? (hitRate>=0.6?"g":hitRate>=0.5?"":"r") : "";
+
         tr.innerHTML = `
-          <div class="fl-td dim" style="flex:0 0 140px;font-family:monospace;font-size:8px" title="${_esc(m.strategy_id||"")}">${_esc(m.strategy_id||"")}</div>
-          <div class="fl-td ${fundCol}"  style="flex:0 0 44px;font-weight:700;font-size:8px">${fund!=null?num2(fund,3):"—"}</div>
-          <div class="fl-td ${alphaWin!=null&&alphaWin>=0.6?"g":alphaWin!=null&&alphaWin>=0.5?"":"r"}" style="flex:0 0 38px;font-size:8px">${alphaWin!=null?(alphaWin*100).toFixed(0)+"%":"—"}</div>
-          <div class="fl-td ${spreadCol}" style="flex:0 0 46px;font-size:8px">${pct2(spread,1)}</div>
-          <div class="fl-td ${stair!=null&&stair>=0.02?"g":stair!=null&&stair>=0?"":"r"}" style="flex:0 0 38px;font-size:8px">${stair!=null?pct2(stair,1):"—"}</div>
-          <div class="fl-td ${bearCol}"  style="flex:0 0 36px;font-size:8px">${bear!=null?pct2(bear,1):"—"}</div>
-          <div class="fl-td ${bullCol}"  style="flex:0 0 36px;font-size:8px">${bull!=null?pct2(bull,1):"—"}</div>
-          <div class="fl-td"             style="flex:0 0 36px;font-size:8px">${num2(m.icir,2)}</div>
-          <div class="fl-td"             style="flex:0 0 36px;font-size:8px">${m.ic_hit_rate!=null?((m.ic_hit_rate)*100).toFixed(0)+"%":"—"}</div>
-          <div class="fl-td ${calmCol}" style="flex:0 0 38px;font-size:8px">${calm!=null?num2(calm,2):"—"}</div>
+          <div class="fl-td dim" style="flex:0 0 140px;font-family:monospace;font-size:8px" title="${_esc(m.run_label||"")}">${sid}</div>
+          <div class="fl-td ${fundCol}"   style="flex:0 0 44px;font-weight:700;font-size:8px">${fund!=null?num(fund,3):"—"}</div>
+          <div class="fl-td ${winCol}"    style="flex:0 0 38px;font-size:8px">${alphaWin!=null?(alphaWin*100).toFixed(0)+"%":"—"}</div>
+          <div class="fl-td ${spreadCol}" style="flex:0 0 46px;font-size:8px">${pct(spread,1)}</div>
+          <div class="fl-td ${stairCol}"  style="flex:0 0 38px;font-size:8px">${stair!=null?pct(stair,1):"—"}</div>
+          <div class="fl-td ${monoCol}"   style="flex:0 0 38px;font-size:8px">${mono!=null?(mono*100).toFixed(0)+"%":"—"}</div>
+          <div class="fl-td ${alphaCol}"  style="flex:0 0 38px;font-size:8px">${avgAlpha!=null?pct(avgAlpha,1):"—"}</div>
+          <div class="fl-td ${icirCol}"   style="flex:0 0 36px;font-size:8px">${num(icir,2)}</div>
+          <div class="fl-td ${hitCol}"    style="flex:0 0 36px;font-size:8px">${hitRate!=null?(hitRate*100).toFixed(0)+"%":"—"}</div>
           <button
-            title="Send Q1 to Results tab for validation"
+            title="Send Q1 to Results tab"
             onclick="event.stopPropagation();flPromoteToResults('${sid}')"
             style="flex:0 0 22px;width:22px;height:18px;margin:0 2px;padding:0;background:var(--accent2);color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:900;line-height:18px;text-align:center;align-self:center"
           >+</button>
         `;
 
-        tr.onclick = async () => {
+        tr.onclick = function () {
           document.querySelectorAll("#fl-bank-body .fl-tr").forEach(r => r.classList.remove("active"));
           tr.classList.add("active");
           if (typeof flBankRowClick === "function") flBankRowClick(m);
@@ -296,145 +324,67 @@
       }
       body.appendChild(frag);
       if (end < sorted.length) {
-        setTimeout(() => _appendChunk(end), 0);  // yield to browser between chunks
+        setTimeout(function () { _appendChunk(end); }, 0);
       }
     }
 
     _appendChunk(0);
-  }
-
-    if (count) count.textContent = filtered.length + " / " + models.length + " models";
-
-    if (!filtered.length) {
-      body.innerHTML = "";
-      if (empty) { empty.style.display = "block"; empty.textContent = "No models match filter"; }
-      return;
-    }
-    if (empty) empty.style.display = "none";
-
-    // Sort
-    const sorted = [...filtered].sort((a, b) => {
-      if (sortKey === "date") {
-        return (b.saved_at || b.strategy_id || "").localeCompare(a.saved_at || a.strategy_id || "");
-      }
-      const av = a[sortKey]; const bv = b[sortKey];
-      if (av == null) return 1; if (bv == null) return -1;
-      return bv - av;  // descending
-    });
-
-    function pct(v, d=1) { if (v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
-    function num(v, d=2) { if (v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
-
-    // Virtual rendering: only build DOM for first 200 rows immediately,
-    // append the rest in a non-blocking chunk to keep UI responsive with 664 rows.
-    body.innerHTML = "";
-    const CHUNK = 200;
-
-    function _appendChunk(startIdx) {
-      const frag = document.createDocumentFragment();
-      const end = Math.min(startIdx + CHUNK, sorted.length);
-      for (let ci = startIdx; ci < end; ci++) {
-        const m = sorted[ci];
-        const tr = document.createElement("div");
-        tr.className = "fl-tr";  // rest of row build below uses m
-        _buildBankRow(tr, m, pct, pct, num);
-        frag.appendChild(tr);
-      }
-      body.appendChild(frag);
-      if (end < sorted.length) {
-        // Yield to browser between chunks — prevents UI freeze
-        setTimeout(() => _appendChunk(end), 0);
-      }
-    }
-
-    _appendChunk(0);
-    return; // row building moved to _buildBankRow below
-  }
-
-  function _buildBankRow(tr, m, pct2, pct, num2) {
-    function pct3(v,d=1) { if(v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
-    function num3(v,d=2) { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
-    const sorted = null; // unused in row build
-    // (reassign locals to match original variable names used below)
-    const pct2_ = pct3; const num2_ = num3;
-    // row build continues inline (original forEach body) — see below
-
-    // ─── inline row build (was inside sorted.forEach) ──────────────────────
-    { const m2 = m; // alias for clarity
-      const tr = document.createElement("div");
-      tr.className = "fl-tr";
-
-      function pct2(v,d=1) { if(v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
-      function num2(v,d=2) { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
-      function col(v, threshGood, threshNeutral) {
-        if(v==null||isNaN(v)) return "";
-        return v >= threshGood ? "g" : v >= threshNeutral ? "" : "r";
-      }
-
-      const spread   = m.quintile_spread_cagr;
-      const fund     = m.obq_fund_score;
-      const alphaWin = m.alpha_win_rate;
-      const stair    = m.staircase_score;
-      const bear     = m.bear_score;
-      const bull     = m.bull_score;
-      const calm     = m.q1_calmar;
-
-      // Color coding
-      const fundCol  = fund!=null ? (fund>=0.5?"g":fund>=0.3?"":"r") : "";
-      const spreadCol= spread!=null?(spread>=0.06?"g":spread>=0?"":"r"):"";
-      const bearCol  = bear!=null?(bear>=0.02?"g":bear>=0?"":"r"):"";
-      const bullCol  = bull!=null?(bull>=0.02?"g":bull>=0?"":"r"):"";
-      const calmCol  = calm!=null?(calm>=0.5?"g":calm>=0.2?"":"r"):"";
-
-      const sid = _esc(m.strategy_id || "");
-      tr.innerHTML = `
-        <div class="fl-td dim" style="flex:0 0 140px;font-family:monospace;font-size:8px" title="${_esc(m.strategy_id||"")}">${_esc(m.strategy_id||"")}</div>
-        <div class="fl-td ${fundCol}"  style="flex:0 0 44px;font-weight:700;font-size:8px">${fund!=null?num2(fund,3):"—"}</div>
-        <div class="fl-td ${alphaWin!=null&&alphaWin>=0.6?"g":alphaWin!=null&&alphaWin>=0.5?"":"r"}" style="flex:0 0 38px;font-size:8px">${alphaWin!=null?(alphaWin*100).toFixed(0)+"%":"—"}</div>
-        <div class="fl-td ${spreadCol}" style="flex:0 0 46px;font-size:8px">${pct2(spread,1)}</div>
-        <div class="fl-td ${stair!=null&&stair>=0.02?"g":stair!=null&&stair>=0?"":"r"}" style="flex:0 0 38px;font-size:8px">${stair!=null?pct2(stair,1):"—"}</div>
-        <div class="fl-td ${bearCol}"  style="flex:0 0 36px;font-size:8px">${bear!=null?pct2(bear,1):"—"}</div>
-        <div class="fl-td ${bullCol}"  style="flex:0 0 36px;font-size:8px">${bull!=null?pct2(bull,1):"—"}</div>
-        <div class="fl-td"             style="flex:0 0 36px;font-size:8px">${num2(m.icir,2)}</div>
-        <div class="fl-td"             style="flex:0 0 36px;font-size:8px">${m.ic_hit_rate!=null?((m.ic_hit_rate)*100).toFixed(0)+"%":"—"}</div>
-        <div class="fl-td ${calmCol}" style="flex:0 0 38px;font-size:8px">${calm!=null?num2(calm,2):"—"}</div>
-        <button
-          title="Send Q1 to Results tab for validation"
-          onclick="event.stopPropagation();flPromoteToResults('${sid}')"
-          style="flex:0 0 22px;width:22px;height:18px;margin:0 2px;padding:0;background:var(--accent2);color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:900;line-height:18px;text-align:center;align-self:center"
-        >+</button>
-      `;
-
-      tr.onclick = async () => {
-        document.querySelectorAll("#fl-bank-body .fl-tr").forEach(r => r.classList.remove("active"));
-        tr.classList.add("active");
-        // Delegate to factor_lab's bank click handler via a synthetic bank load
-        if (typeof flBankRowClick === "function") {
-          flBankRowClick(m);
-        }
-      };
-      body.appendChild(tr);
-    });
   }
 
   // Expose render so factor_lab can call it after loading bank
   window.flRenderBankRows = _renderBankRows;
 
   // ── Seed default Cycle 001 if storage is empty ──────────────────────────────
+  // The 6 real research cycles completed to date.
+  // Always authoritative — clears stale localStorage and re-seeds on version bump.
+  const _REAL_CYCLES = [
+    {
+      id: "CYC-003", num: 3, name: "R3000 Baseline — 91 Factors",
+      created: "2026-04-28",
+      scope: "91 factors × 3 cap tiers (all/large/$10B+/mid). Established baseline OBQ scores across JCN composites, CYC-002 factors, and universe scores. Top: JCN Alpha Trifecta OBQ 0.839, JCN QARP OBQ 0.848 (large-cap).",
+    },
+    {
+      id: "CYC-004", num: 4, name: "Pure Factor Baselines — 37 Factors",
+      created: "2026-04-30",
+      scope: "37 new pure fundamental factors × 3 cap tiers. Key findings: OCF/Assets OBQ 0.777, F-Score OBQ 0.759, EBIT/Assets OBQ 0.739. Established the pure-factor benchmark library.",
+    },
+    {
+      id: "CYC-005", num: 5, name: "Sector Intelligence — 15 Champions × 11 Sectors",
+      created: "2026-05-02",
+      scope: "15 champion factors × 11 GICS sectors + 11 novel sector-specialist factors. IT + JCN Alpha Trifecta OBQ 0.883 (highest in study). Health Care OCF/Assets OBQ 0.876 with +35% Q1-Q5 spread (widest in study).",
+    },
+    {
+      id: "CYC-006", num: 6, name: "Rebalance Timing Study — 120 Factors × 10 Timings",
+      created: "2026-05-07",
+      scope: "120 factors × 10 timing variants (quarterly/semi-annual rotations/annual). KEY: Annual Jun 30 (A-Q2) wins for most factors (26/120). Composites/Growth prefer Dec 31; Value/Quality prefer Jun 30; Momentum prefers SA-APR-OCT.",
+    },
+    {
+      id: "CYC-006b", num: 7, name: "Staggered Tranche Rebalancing — 9 Configs",
+      created: "2026-05-09",
+      scope: "9 tranche configs × 120 factors (CPU post-processing). KEY: 2T-MAR-SEP (50/50) wins most with +0.221 avg OBQ gain. 4T-MAR-JUN-SEP-DEC improves 90/119 factors. jcn_qarp reaches OBQ 0.922 with 2T-JUN-DEC.",
+    },
+    {
+      id: "CYC-007", num: 8, name: "Sector-Optimized Composites — 9 Composites",
+      created: "2026-05-12",
+      scope: "9 per-sector multi-factor composites (HC, IT, FIN, CD, CS, IND, MAT). Built by combining best within-sector factors from CYC-005. Run on GPU with within-sector mask.",
+    },
+  ];
+
   function _seedDefaultCycle() {
-    if (_cycles.length > 0) return;  // already have cycles, don't overwrite
-    const cyc = {
-      id:           "CYC-001",
-      num:          1,
-      name:         "Pre-Calibration & Dry Testing",
-      created:      new Date().toISOString().slice(0, 10),
-      scope:        "Pre-calibration and dry testing all templates right now.\n\nObjective: Validate the full factor backtest pipeline — confirm data integrity, tearsheet accuracy, bank storage, and fitness scoring are all working correctly before starting live optimization cycles.\n\nSuccess criteria: All tearsheet data points populated, bank saves/loads correctly, all quintile charts render with proper dates.",
-      strategy_ids: [],
-      active:       true,
-    };
-    _cycles.push(cyc);
+    // The 6 real cycles are always authoritative — definitions never come from localStorage.
+    // Only strategy_ids links are preserved from whatever was previously stored.
+    const prevById = {};
+    _cycles.forEach(c => { prevById[c.id] = c; });
+
+    _cycles = _REAL_CYCLES.map(rc => ({
+      ...rc,
+      strategy_ids: (prevById[rc.id] || {}).strategy_ids || [],
+      active: false,
+    }));
+
+    _activeCycleId = _cycles[_cycles.length - 1].id;
+    _cycles[_cycles.length - 1].active = true;
     _save();
-    _activeCycleId = cyc.id;
   }
 
   // ── Init ─────────────────────────────────────────────────────────────────────

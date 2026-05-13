@@ -107,53 +107,124 @@ function ftDrawIC(divId, icData) {
   }), FT_CFG);
 }
 
-// ── 4. Period Returns Heatmap (periods × buckets) ────────────────────────────
+// ── 4. Period Returns Heatmap — Year × Period grid, one row per year ─────────
+// Layout: Y-axis = years (oldest at top), X-axis = period within year (P1, P2, ...)
+// One subplot per quintile, stacked vertically.
 function ftDrawPeriodHeatmap(divId, periodData, n_buckets) {
+  const el = document.getElementById(divId);
   if (!periodData || !periodData.length) {
-    const el = document.getElementById(divId);
     if (el) el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:10px;color:var(--text-muted)">No period data available</div>';
     return;
   }
-  const dates  = periodData.map(d => d.date);
-  const zData  = [];
-  for (let b = 1; b <= n_buckets; b++) {
-    zData.push(periodData.map(d => {
-      const v = d["q"+b+"_ret"];
-      return v != null ? +(v*100).toFixed(2) : null;
-    }));
-  }
-  const yLabels = Array.from({length:n_buckets}, (_,i)=>"Q"+(i+1));
 
-  // Format dates as "MMM YY" for readable x-axis labels
-  const xLabels = dates.map(d => {
-    const dt = new Date(d);
-    return dt.toLocaleDateString("en-US", {month:"short", year:"2-digit"});
+  // ── Build year × period index grid ──────────────────────────────────────────
+  // Determine how many periods per year (detect from data)
+  const yearCounts = {};
+  periodData.forEach(function(d) {
+    const yr = d.date ? d.date.slice(0, 4) : "?";
+    yearCounts[yr] = (yearCounts[yr] || 0) + 1;
   });
+  const maxPeriodsPerYear = Math.max(...Object.values(yearCounts));
+  const xLabels = Array.from({length: maxPeriodsPerYear}, (_, i) => "P" + (i + 1));
+  // Use month abbreviations when ppy <= 12 and ppy divides 12 evenly
+  const MONTH_LABELS = {
+    1:  ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],
+    2:  ["Jun","Dec"],
+    4:  ["Mar","Jun","Sep","Dec"],
+    6:  ["Feb","Apr","Jun","Aug","Oct","Dec"],
+    12: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],
+  };
+  const monthLabels = MONTH_LABELS[maxPeriodsPerYear] || xLabels;
 
-  Plotly.newPlot(divId, [{
-    z: zData, x: xLabels, y: yLabels,
-    type:"heatmap",
-    colorscale:[[0,"#b91c1c"],[0.45,"#fff7ed"],[0.5,"#fefce8"],[0.55,"#f0fdf4"],[1,"#15803d"]],
-    zmid:0, zmin:-25, zmax:25,
-    // Show value inside each cell — larger font, no % sign clutter
-    text: zData.map(row=>row.map(v=>v==null?"":v.toFixed(1)+"%")),
-    texttemplate:"%{text}",
-    textfont:{size:8, color:"#111111"},
-    showscale:true,
-    colorbar:{ title:{text:"Period Ret %",side:"right"}, tickfont:{size:8}, len:0.9, thickness:12 },
-    xgap:1, ygap:1,
-  }], {
-    paper_bgcolor:FT_COLORS.bg, plot_bgcolor:FT_COLORS.plot_bg,
-    margin:{l:44,r:80,t:8,b:80},  // b:80 for rotated labels
-    font:{family:"Segoe UI,Arial",size:9,color:FT_COLORS.tick},
-    xaxis:{
-      tickfont:{size:8,color:FT_COLORS.tick},
-      tickangle:-45,    // rotate 45° so dates are readable
-      gridcolor:FT_COLORS.grid,
-      showgrid:false,
-    },
-    yaxis:{tickfont:{size:10,color:FT_COLORS.tick}, showgrid:false},
-  }, FT_CFG);
+  const years = Object.keys(yearCounts).sort();  // oldest to newest
+
+  // For each bucket, build a 2D array [year][period] = return %
+  const COLORSCALE = [[0,"#b91c1c"],[0.42,"#fca5a5"],[0.5,"#f9fafb"],[0.58,"#86efac"],[1,"#15803d"]];
+
+  // Create one heatmap div per quintile, stacked vertically
+  el.innerHTML = "";
+  el.style.cssText = "display:flex;flex-direction:column;gap:4px;padding:8px;overflow-y:auto";
+
+  for (let b = 1; b <= n_buckets; b++) {
+    // Build year×period grid for this bucket
+    const yearPeriodIdx = {};  // year -> current period count
+    const grid = {};           // year -> [ret per period]
+    years.forEach(function(yr) { grid[yr] = new Array(maxPeriodsPerYear).fill(null); });
+
+    periodData.forEach(function(d) {
+      const yr  = d.date ? d.date.slice(0, 4) : "?";
+      const ret = d["q"+b+"_ret"];
+      if (!(yr in yearPeriodIdx)) yearPeriodIdx[yr] = 0;
+      const pidx = yearPeriodIdx[yr];
+      if (pidx < maxPeriodsPerYear && yr in grid) {
+        grid[yr][pidx] = ret != null ? +(ret * 100).toFixed(2) : null;
+      }
+      yearPeriodIdx[yr] = (yearPeriodIdx[yr] || 0) + 1;
+    });
+
+    // z = [year_0_row, year_1_row, ...] — oldest year first (top)
+    const zData = years.map(function(yr) { return grid[yr]; });
+    const textData = zData.map(function(row) {
+      return row.map(function(v) { return v == null ? "" : v.toFixed(1) + "%"; });
+    });
+
+    // Cell dimensions: make cells proportional to content
+    const cellH = Math.max(18, Math.min(28, Math.floor(400 / years.length)));
+    const chartH = years.length * cellH + 50;
+
+    const subDiv = document.createElement("div");
+    subDiv.style.cssText = "flex-shrink:0";
+
+    // Quintile label above each chart
+    const lbl = document.createElement("div");
+    lbl.style.cssText = "font-size:9px;font-weight:700;color:"+FT_COLORS.q[b-1]+";padding:2px 4px;letter-spacing:.5px";
+    lbl.textContent = "Q" + b + " PERIOD RETURNS (%)";
+    subDiv.appendChild(lbl);
+
+    const plotDiv = document.createElement("div");
+    plotDiv.id = divId + "_q" + b;
+    plotDiv.style.cssText = "width:100%;height:" + chartH + "px";
+    subDiv.appendChild(plotDiv);
+    el.appendChild(subDiv);
+
+    // Compute absolute max for symmetric color scale
+    const allVals = zData.flat().filter(function(v){ return v != null; });
+    const absMax  = allVals.length ? Math.min(Math.max(...allVals.map(Math.abs)), 50) : 25;
+
+    Plotly.newPlot(plotDiv.id, [{
+      z:    zData,
+      x:    monthLabels,
+      y:    years,
+      type: "heatmap",
+      colorscale: COLORSCALE,
+      zmid: 0, zmin: -absMax, zmax: absMax,
+      text: textData,
+      texttemplate: "%{text}",
+      textfont: {size: Math.max(7, Math.min(10, cellH - 8)), color: "#111"},
+      showscale: true,
+      colorbar: {
+        title: {text: "%", side: "right"},
+        tickfont: {size: 8},
+        len: 1.0, thickness: 10,
+        tickformat: ".0f",
+      },
+      xgap: 2, ygap: 2,
+    }], {
+      paper_bgcolor: FT_COLORS.bg,
+      plot_bgcolor:  FT_COLORS.plot_bg,
+      margin: {l: 44, r: 60, t: 4, b: 30},
+      font: {family: "Segoe UI,Arial", size: 9, color: FT_COLORS.tick},
+      xaxis: {
+        tickfont: {size: 9, color: FT_COLORS.tick},
+        side: "bottom", showgrid: false,
+      },
+      yaxis: {
+        tickfont: {size: 9, color: FT_COLORS.tick},
+        showgrid: false,
+        autorange: "reversed",  // oldest year at top
+      },
+    }, FT_CFG);
+  }
 }
 
 // ── 5. Annual Returns by Quintile (grouped bar chart by year) ─────────────────

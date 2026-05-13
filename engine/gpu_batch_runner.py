@@ -291,6 +291,7 @@ def run_cyc003_gpu(
                     score_column=score_col,
                     cap_mask_gpu=cap_mask,
                     sector_gpu=getattr(data_pack, 'sector_gpu', None),
+                    market_cap_gpu=getattr(data_pack, 'market_cap_gpu', None),
                 )
 
                 if result.get('status') == 'complete':
@@ -397,6 +398,7 @@ def run_cyc003_gpu(
                     hold_months=6,
                     cap_mask_gpu=cap_mask,
                     sector_gpu=getattr(data_pack, 'sector_gpu', None),
+                    market_cap_gpu=getattr(data_pack, 'market_cap_gpu', None),
                 )
 
                 if result.get('status') == 'complete':
@@ -476,6 +478,7 @@ def run_parity_check(
             lower_better=(direction == 'lower_better'),
             hold_months=6,
             score_column=score_col,
+            market_cap_gpu=getattr(data_pack, 'market_cap_gpu', None),
         )
         results[score_col] = result
 

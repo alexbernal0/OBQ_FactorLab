@@ -699,6 +699,11 @@
 <!-- ══════════════════════════════════════════════════════════════
      SCRIPTS
 ══════════════════════════════════════════════════════════════ -->
+<!-- ── Server-injected bank data — available synchronously before any JS runs ── -->
+<script>
+window.__FACTOR_BANK__ = {{ factor_bank_json | safe }};
+window.__PM_BANK__     = {{ pm_bank_json | safe }};
+</script>
 <script src="/static/js/plotly.min.js"></script>
 <script src="/static/js/tearsheet.js"></script>
 <script src="/static/js/factor_tearsheet.js"></script>

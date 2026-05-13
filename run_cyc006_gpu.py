@@ -190,6 +190,7 @@ def run_timing_variant(
                 hold_months=hold_months,
                 score_column=sc,
                 sector_gpu=pack.sector_gpu,
+                market_cap_gpu=getattr(pack, 'market_cap_gpu', None),
             )
             if result.get('status') == 'complete':
                 result['run_label'] = (f"{sc} | 5Q | {hold_months}mo | R3K All-Cap | "
