@@ -91,10 +91,30 @@ def _ensure_schema(con):
         "SELECT column_name FROM information_schema.columns WHERE table_name='portfolio_models'"
     ).fetchall()}
     new_cols = [
+        # Original missing cols
         ("alpha_vs_bm",       "DOUBLE"),
         ("beta_vs_bm",        "DOUBLE"),
         ("holdings_log_json", "VARCHAR"),
         ("trade_log_json",    "VARCHAR"),
+        # CYC-008: new scalar metrics for OBQ Port Score
+        ("display_name",      "VARCHAR"),   # human-readable factor name
+        ("avg_ann_dd",        "DOUBLE"),    # avg annual max drawdown
+        ("up_capture",        "DOUBLE"),    # upside capture vs SPX
+        ("down_capture",      "DOUBLE"),    # downside capture vs SPX
+        ("iudr",              "DOUBLE"),    # integrated upside/downside ratio
+        ("calmar_gips",       "DOUBLE"),    # CAGR / |MaxDD| (no win-rate mult)
+        # OBQ Port Score + components (all sortable scalars in the log)
+        ("obq_port_score",    "DOUBLE"),    # composite score
+        ("port_ret_comp",     "DOUBLE"),    # return component
+        ("port_cons_comp",    "DOUBLE"),    # consistency component
+        ("port_smooth_comp",  "DOUBLE"),    # smoothness component
+        ("port_alpha_comp",   "DOUBLE"),    # alpha+capture component
+        ("port_dd_comp",      "DOUBLE"),    # drawdown percentile component
+        # Benchmark info
+        ("benchmark",         "VARCHAR"),   # "SPX" for CYC-008
+        ("spx_cagr",          "DOUBLE"),    # SPX CAGR over same period
+        ("spx_max_dd",        "DOUBLE"),    # SPX max DD over same period
+        ("excess_cagr",       "DOUBLE"),    # portfolio CAGR - SPX CAGR
     ]
     for col, dtype in new_cols:
         if col not in existing:
@@ -171,10 +191,13 @@ def save_portfolio_model(result: dict, overwrite: bool = True) -> str:
         "stop_loss_pct":  _safe(config.get("stop_loss_pct", 0.0)),
         "weight_scheme":  config.get("weight_scheme", "equal"),
         # Scalar metrics
+        "display_name":     result.get("display_name", score),
+        "benchmark":        config.get("benchmark", "SPX"),
         "cagr":             _safe(pm.get("cagr")),
         "sharpe":           _safe(pm.get("sharpe")),
         "max_dd":           _safe(pm.get("max_dd")),
         "calmar":           _safe(pm.get("calmar")),
+        "calmar_gips":      _safe(pm.get("calmar_gips")),
         "sortino":          _safe(pm.get("sortino")),
         "ann_vol":          _safe(pm.get("ann_vol")),
         "win_rate_monthly": _safe(pm.get("win_rate_monthly")),
@@ -182,6 +205,21 @@ def save_portfolio_model(result: dict, overwrite: bool = True) -> str:
         "equity_r2":        _safe(pm.get("equity_r2")),
         "alpha_vs_bm":      _safe(pm.get("alpha")),
         "beta_vs_bm":       _safe(pm.get("beta")),
+        "avg_ann_dd":       _safe(pm.get("avg_ann_dd")),
+        "up_capture":       _safe(pm.get("up_capture")),
+        "down_capture":     _safe(pm.get("down_capture")),
+        "iudr":             _safe(pm.get("iudr")),
+        # OBQ Port Score + components
+        "obq_port_score":   _safe(result.get("obq_port_score") or pm.get("obq_port_score")),
+        "port_ret_comp":    _safe(pm.get("return_comp")),
+        "port_cons_comp":   _safe(pm.get("consistency_comp")),
+        "port_smooth_comp": _safe(pm.get("smoothness_comp")),
+        "port_alpha_comp":  _safe(pm.get("alpha_capture_comp")),
+        "port_dd_comp":     _safe(pm.get("drawdown_comp")),
+        # SPX comparison
+        "spx_cagr":         _safe(result.get("spy_metrics", {}).get("cagr")),
+        "spx_max_dd":       _safe(result.get("spy_metrics", {}).get("max_dd")),
+        "excess_cagr":      _safe((pm.get("cagr") or 0) - (result.get("spy_metrics", {}).get("cagr") or 0)),
         "n_periods":        int(result.get("n_periods", 0)),
         "elapsed_s":        _safe(result.get("elapsed_s")),
         # JSON blobs

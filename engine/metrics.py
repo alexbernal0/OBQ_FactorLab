@@ -119,6 +119,14 @@ def compute_all(
     max_dd = float(dd.min())
     avg_dd = float(dd[dd < 0].mean()) if (dd < 0).any() else 0.0
 
+    # Avg Annual Max Drawdown — mean of the worst drawdown within each calendar year
+    # Slices the drawdown series into yearly chunks, takes min of each, averages
+    _ppy_dd = max(1, int(round(periods_per_year)))
+    _n_full_yrs = max(1, int(years))
+    _ann_dd_slices = [dd[i*_ppy_dd:(i+1)*_ppy_dd] for i in range(_n_full_yrs)
+                      if len(dd[i*_ppy_dd:(i+1)*_ppy_dd]) > 0]
+    avg_ann_dd = float(np.mean([s.min() for s in _ann_dd_slices])) if _ann_dd_slices else max_dd
+
     # Win rates (computed early — used in Calmar below)
     wr_mo = float((r > 0).mean())
     ann_r = annual_ret if annual_ret is not None else np.array([])
@@ -384,9 +392,14 @@ def compute_all(
         beta = float(np.cov(r, bm[:len(r)])[0,1] / np.var(bm[:len(r)])) if np.var(bm[:len(r)]) > 0 else 1.0
         alpha = float(cagr - rf_annual - beta * (bm_cagr - rf_annual))
         ir = float((cagr - bm_cagr) / te) if te > 0 else 0.0
-        up_p = r > 0; dn_p = r < 0
-        uc = float(r[up_p].mean()/bm[:len(r)][up_p].mean()) if up_p.any() and bm[:len(r)][up_p].mean() != 0 else 1.0
-        dc = float(r[dn_p].mean()/bm[:len(r)][dn_p].mean()) if dn_p.any() and bm[:len(r)][dn_p].mean() != 0 else 1.0
+        # Capture ratios use BENCHMARK direction (standard definition):
+        # Up Capture   = portfolio return in BM-up periods / BM return in BM-up periods
+        # Down Capture = portfolio return in BM-down periods / BM return in BM-down periods
+        bm_al = bm[:len(r)]
+        up_p  = bm_al > 0
+        dn_p  = bm_al < 0
+        uc = float(r[up_p].mean() / bm_al[up_p].mean()) if up_p.any() and bm_al[up_p].mean() != 0 else 1.0
+        dc = float(r[dn_p].mean() / bm_al[dn_p].mean()) if dn_p.any() and bm_al[dn_p].mean() != 0 else 1.0
         treynor = float((cagr - rf_annual) / beta) if beta != 0 else 0.0
         m2 = float(sharpe * bm_vol + rf_annual)
         burke = float(cagr / bd) if bd > 0 else 0.0
@@ -437,7 +450,7 @@ def compute_all(
         pain_ratio=pain_ratio, recovery_factor=recov_f,
         mar_ratio=mar_ratio, system_score=system_score,
         # Risk
-        max_dd=max_dd, avg_dd=avg_dd, ulcer_index=ulcer,
+        max_dd=max_dd, avg_dd=avg_dd, avg_ann_dd=avg_ann_dd, ulcer_index=ulcer,
         pain_index=pain, lake_ratio=lake,
         var_95=var95, var_99=var99, cvar_95=cvar95, cvar_99=cvar99,
         # Distribution
