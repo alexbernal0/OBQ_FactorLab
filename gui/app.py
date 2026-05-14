@@ -922,11 +922,25 @@ def portfolio_bank():
 
 @app.route("/api/portfolio/bank/<strategy_id>")
 def portfolio_bank_model(strategy_id):
+    """Return portfolio model. Strips large blobs (trade_log, holdings_log)
+    by default for fast initial load. Pass ?full=1 to include them."""
     try:
         from engine.portfolio_bank import get_portfolio_model
         m = get_portfolio_model(strategy_id)
         if not m: return jsonify({"error": "not found"}), 404
-        return jsonify(m)
+        # Strip heavy blobs unless full=1 requested — 740KB → ~20KB
+        if request.args.get("full") != "1":
+            m.pop("trade_log_json",    None)
+            m.pop("holdings_log_json", None)
+        def _clean(obj):
+            import math as _m
+            if isinstance(obj, dict):  return {k: _clean(v) for k, v in obj.items()}
+            if isinstance(obj, list):  return [_clean(v) for v in obj]
+            if isinstance(obj, float) and (_m.isnan(obj) or _m.isinf(obj)): return None
+            if hasattr(obj, 'isoformat'): return obj.isoformat()
+            if hasattr(obj, 'item'):      return obj.item()
+            return obj
+        return app.response_class(json.dumps(_clean(m)), mimetype="application/json")
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

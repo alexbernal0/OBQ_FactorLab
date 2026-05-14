@@ -202,22 +202,30 @@
     const bm      = result.bm_metrics  || {};
 
     // ── Header ───────────────────────────────────────────────────────────────
+    const cfg       = result.config || {};
+    const dname     = cfg.display_name || run.result?.display_name || cfg.score_column || run.run_label.split("|")[0].trim();
+    const d0        = result.equity_dates?.[0] || "";
+    const dN        = result.equity_dates?.[result.equity_dates.length - 1] || "";
+    const topN      = cfg.top_n || "?";
+    const nT        = cfg.n_tranches || "?";
+    const bmark     = cfg.benchmark || "SPX";
+    const sid       = run.strategy_id || "";
+
     const hdr = document.createElement("div");
     hdr.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:var(--bg-panel);border-bottom:1px solid var(--border);flex-shrink:0";
     hdr.innerHTML = `
-      <div>
-        <div style="font-size:13px;font-weight:800;color:#0066cc;letter-spacing:1px">${run.run_label}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:800;color:#0066cc;letter-spacing:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${dname}</div>
         <div style="font-size:9px;color:var(--text-muted);margin-top:2px">
-          ${result.equity_dates?.[0]||""} → ${result.equity_dates?.[result.equity_dates.length-1]||""}
-          · ${result.n_periods||0} periods
-          · Top-${result.config?.top_n||"?"} | ${result.config?.sector_max||"?"}/ sector
-          ${run.strategy_id ? "· " + run.strategy_id : ""}
+          Top-${topN} | ${nT}T-Qtrly | Equal-Wt | vs ${bmark} |
+          ${d0.slice(0,4)}&ndash;${dN.slice(0,4)} | ${result.n_periods||0} periods
         </div>
+        <div style="font-size:8px;color:var(--accent2);margin-top:2px;opacity:0.8">${sid}</div>
       </div>
-      <div style="display:flex;gap:6px">
-        <button onclick="pmExportCSV('${run_id}')"  style="background:#16a34a;color:#fff;border:none;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;border-radius:3px">&#128202; CSV</button>
-        <button onclick="pmExportPDF('${run_id}')"  style="background:#0066cc;color:#fff;border:none;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;border-radius:3px">&#128196; PDF</button>
-        <button onclick="pmSnapTearsheet('${run_id}')" style="background:#7c3aed;color:#fff;border:none;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;border-radius:3px">&#128247; PNG</button>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button onclick="pmExportCSV('${run_id}')"     style="background:#16a34a;color:#fff;border:none;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;border-radius:3px">CSV</button>
+        <button onclick="pmExportPDF('${run_id}')"     style="background:#0066cc;color:#fff;border:none;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;border-radius:3px">PDF</button>
+        <button onclick="pmSnapTearsheet('${run_id}')" style="background:#7c3aed;color:#fff;border:none;padding:4px 10px;font-size:9px;font-weight:700;cursor:pointer;border-radius:3px">PNG</button>
       </div>
     `;
     tsContent.appendChild(hdr);
@@ -243,29 +251,82 @@
     function pct(v,d=2,sign=false) { if(v==null||isNaN(+v)) return "—"; const s=(v*100).toFixed(d); return (sign&&v>=0?"+":"")+s+"%"; }
     function num(v,d=2) { if(v==null||isNaN(+v)) return "—"; return Number(v).toFixed(d); }
     function green(v) { return (v||0)>=0?"#16a34a":"#dc2626"; }
+    function dollar(v) { if(v==null||isNaN(+v)) return "—"; return "$"+Math.round(v).toLocaleString(); }
 
-    const alpha = pm.alpha; // vs SPY since that's now the benchmark
-    kpiGrid.appendChild(kpiGroup("Portfolio", "#0066cc", [
-      ["CAGR",          pct(pm.cagr,2,true),                     green(pm.cagr)],
-      ["Sharpe Ratio",  num(pm.sharpe,3),                        (pm.sharpe||0)>=1?"#16a34a":(pm.sharpe||0)>=0.5?"var(--text)":"#dc2626"],
-      ["Max Drawdown",  pct(pm.max_dd,1),                        "#dc2626"],
-      ["Calmar (GIPS)", num(pm.calmar_gips||pm.calmar,3),       (pm.calmar_gips||pm.calmar||0)>=0.5?"#16a34a":"var(--text)"],
-      ["Sortino Ratio", num(pm.sortino,2),                       "var(--text)"],
-      ["Win Rate (Mo)", pm.win_rate_monthly!=null?(pm.win_rate_monthly*100).toFixed(0)+"%":"—","var(--text)"],
-      ["Alpha vs SPY",  alpha!=null?pct(alpha,2,true):"—",       green(alpha)],
-      ["Beta vs SPY",   num(pm.beta,2),                          "var(--text)"],
+    // Pull CYC-008 metrics from portfolio_metrics
+    const obqPort  = pm.obq_port_score;
+    const annAlpha = pm.alpha;               // annualized alpha vs SPX from compute_all
+    const upCap    = pm.up_capture;
+    const dnCap    = pm.down_capture;
+    const pmR2     = pm.equity_r2;
+    const iudr     = pm.iudr;
+    const avgAnnDD = pm.avg_ann_dd;
+
+    kpiGrid.appendChild(kpiGroup("Portfolio — CYC-008 Model", "#0066cc", [
+      ["OBQ Port Score",  obqPort!=null?num(obqPort,3):"—",       obqPort!=null?(obqPort>=0.7?"#16a34a":obqPort>=0.4?"var(--text)":"#dc2626"):"var(--text)"],
+      ["CAGR",            pct(pm.cagr,2,true),                     green(pm.cagr)],
+      ["Alpha vs SPX",    annAlpha!=null?pct(annAlpha,2,true):"—", green(annAlpha)],
+      ["Max Drawdown",    pct(pm.max_dd,1),                        "#dc2626"],
+      ["Avg Ann DD",      avgAnnDD!=null?pct(avgAnnDD,1):"—",      "#dc2626"],
+      ["Equity R²",       pmR2!=null?num(pmR2,3):"—",              pmR2!=null&&pmR2>=0.9?"#16a34a":"var(--text)"],
+      ["Sortino",         num(pm.sortino,2),                       "var(--text)"],
+      ["Calmar (GIPS)",   num(pm.calmar_gips||pm.calmar,3),        (pm.calmar_gips||pm.calmar||0)>=0.5?"#16a34a":"var(--text)"],
+      ["Up Capture",      upCap!=null?num(upCap,2):"—",            upCap!=null&&upCap>=1?"#16a34a":"var(--text)"],
+      ["Down Capture",    dnCap!=null?num(dnCap,2):"—",            dnCap!=null&&dnCap<0?"#16a34a":dnCap!=null&&dnCap<1?"var(--text)":"#dc2626"],
+      ["Win Rate (Mo)",   pm.win_rate_monthly!=null?(pm.win_rate_monthly*100).toFixed(0)+"%":"—","var(--text)"],
+      ["IUDR",            iudr!=null?num(iudr,2):"—",              iudr!=null&&iudr>=3?"#16a34a":"var(--text)"],
     ]));
-    kpiGrid.appendChild(kpiGroup("S&amp;P 500 (SPY Benchmark)", "#f59e0b", [
-      ["CAGR",          pct(spy.cagr,2,true),                    green(spy.cagr)],
-      ["Sharpe Ratio",  num(spy.sharpe,3),                       "var(--text)"],
-      ["Max Drawdown",  pct(spy.max_dd,1),                       "#dc2626"],
-      ["Calmar Ratio",  num(spy.calmar,3),                       "var(--text)"],
-      ["Sortino Ratio", num(spy.sortino,2),                      "var(--text)"],
-      ["Win Rate (Mo)", spy.win_rate_monthly!=null?(spy.win_rate_monthly*100).toFixed(0)+"%":"—","var(--text)"],
-      ["Excess CAGR",   pct((pm.cagr||0)-(spy.cagr||0),2,true), green((pm.cagr||0)-(spy.cagr||0))],
-      ["Value $10K",    spy.terminal_wealth!=null?"$"+Math.round(spy.terminal_wealth).toLocaleString():"—","var(--text)"],
+    kpiGrid.appendChild(kpiGroup("S&amp;P 500 Benchmark", "#f59e0b", [
+      ["CAGR",            pct(spy.cagr,2,true),                    green(spy.cagr)],
+      ["Max Drawdown",    pct(spy.max_dd,1),                       "#dc2626"],
+      ["Sortino",         num(spy.sortino,2),                      "var(--text)"],
+      ["Calmar",          num(spy.calmar,3),                       "var(--text)"],
+      ["Win Rate (Mo)",   spy.win_rate_monthly!=null?(spy.win_rate_monthly*100).toFixed(0)+"%":"—","var(--text)"],
+      ["Value $10K",      spy.terminal_wealth!=null?dollar(spy.terminal_wealth):"—","var(--text)"],
+      ["Excess CAGR",     pct((pm.cagr||0)-(spy.cagr||0),2,true), green((pm.cagr||0)-(spy.cagr||0))],
+      ["Port Value $10K", pm.terminal_wealth!=null?dollar(pm.terminal_wealth):"—",green(pm.cagr)],
     ]));
     tsContent.appendChild(kpiGrid);
+
+    // ── OBQ Port Score Breakdown ──────────────────────────────────────────────
+    if (obqPort != null) {
+      const obqBreak = document.createElement("div");
+      obqBreak.style.cssText = "padding:10px 14px;background:var(--bg-panel);border-bottom:1px solid var(--border);flex-shrink:0";
+      const comps = pm.port_components || {};
+      const retC  = pm.return_comp;
+      const consC = pm.consistency_comp;
+      const smoC  = pm.smoothness_comp;
+      const alpC  = pm.alpha_capture_comp;
+      const ddC   = pm.drawdown_comp;
+      const bar = (v) => {
+        if(v==null||isNaN(+v)) return "—";
+        const pct100 = Math.max(0,Math.min(100,((+v+1)/2)*100));
+        const col = +v>=0.5?"#16a34a":+v>=-0.2?"#f59e0b":"#dc2626";
+        return `<div style="display:inline-flex;align-items:center;gap:6px">
+          <div style="width:60px;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="width:${pct100}%;height:100%;background:${col};border-radius:3px"></div>
+          </div>
+          <span style="font-size:10px;font-weight:700;color:${col}">${(+v).toFixed(3)}</span>
+        </div>`;
+      };
+      obqBreak.innerHTML = `
+        <div style="font-size:9px;font-weight:800;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;border-bottom:2px solid var(--border);padding-bottom:4px">
+          OBQ PORT SCORE BREAKDOWN — ${obqPort!=null?obqPort.toFixed(3):"—"} / 1.0
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
+          ${[
+            ["Return (Calmar+Sortino)",retC],
+            ["Consistency (WinRate+IUDR)",consC],
+            ["Smoothness (R²+Surefire)",smoC],
+            ["Alpha+Capture (SPX)",alpC],
+            ["Drawdown (Pct Rank)",ddC],
+          ].map(([lbl,v])=>`<div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px">
+            <div style="font-size:7.5px;color:var(--text-dim);margin-bottom:4px">${lbl}</div>
+            ${bar(v)}
+          </div>`).join("")}
+        </div>`;
+      tsContent.appendChild(obqBreak);
+    }
 
     // ── Charts using tearsheet.js helpers ────────────────────────────────────
     // Inject this run into the global _runs array temporarily so _renderTearsheet works
@@ -903,25 +964,23 @@
       models = r.models || [];
     }
 
-    // Detect legacy records (from before current research sessions — pre-CYC-003)
-    const CYC_START = '2026-05-07';  // CYC-003 start date
-    const legacy  = models.filter(m => (m.created_at || '').slice(0,10) < CYC_START);
-    const current = models.filter(m => (m.created_at || '').slice(0,10) >= CYC_START);
-    const display = current.length > 0 ? current : [];   // show only current-session models
+    // Show CYC-008 records; hide old pre-CYC-008 legacy models
+    const CYC_START = '2026-05-07';
+    const display = models.filter(m =>
+      (m.run_label || '').includes('CYC-008') ||
+      (m.created_at || '').slice(0,10) >= '2026-05-14'
+    );
+    const legacy = models.filter(m =>
+      !(m.run_label || '').includes('CYC-008') &&
+      (m.created_at || '').slice(0,10) < CYC_START
+    );
 
     if (count) count.textContent = (display.length || "No") + " portfolio models" +
-      (legacy.length > 0 ? ` · ${legacy.length} legacy (hidden)` : "");
+      (legacy.length > 0 ? " · " + legacy.length + " legacy hidden" : "");
 
     if (!display.length) {
-      body.innerHTML = legacy.length > 0
-        ? `<div style="padding:12px;font-size:9px;color:var(--text-muted)">
-             <b>${legacy.length} portfolio models from a previous session are archived.</b><br>
-             No portfolios have been run in the current research session (CYC-003 onward).<br>
-             Use the <b>Run Portfolio</b> panel above to create new ones.
-           </div>`
-        : "";
-      if (empty) empty.style.display = display.length ? "none" : "block";
-      if (empty && !legacy.length) empty.textContent = "No portfolio models yet — run a backtest above";
+      body.innerHTML = "";
+      if (empty) { empty.style.display = "block"; empty.textContent = "No portfolio models yet — run CYC-008 batch above"; }
       return;
     }
     if (empty) empty.style.display = "none";
@@ -930,25 +989,30 @@
     function pct(v,d=2) { if(v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
     function num(v,d=2) { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
 
-    display.forEach(m => {
+    // Sort by OBQ Port Score desc by default
+    const sorted = [...display].sort((a,b) => (b.obq_port_score||0) - (a.obq_port_score||0));
+
+    sorted.forEach(m => {
       const tr = document.createElement("div");
       tr.className = "fl-tr";
       const cagr = m.cagr;
+      const obq  = m.obq_port_score;
+      const obqCol = obq!=null ? (obq>=0.7?"g":obq>=0.4?"":"r") : "";
 
-      const pmSid = m.strategy_id || "";
+      const pmSid  = m.strategy_id || "";
+      const dname  = m.display_name || m.score_column || "";
       tr.innerHTML = `
-        <div class="fl-td dim" style="flex:0 0 140px;font-family:monospace;font-size:8px" title="${pmSid}">${pmSid}</div>
-        <div class="fl-td ${(cagr||0)>=0?"g":"r"}" style="flex:0 0 55px">${pct(cagr,2)}</div>
-        <div class="fl-td" style="flex:0 0 44px">${num(m.sharpe,2)}</div>
-        <div class="fl-td r" style="flex:0 0 52px">${pct(m.max_dd,1)}</div>
-        <div class="fl-td" style="flex:0 0 44px">${m.win_rate_monthly!=null?((m.win_rate_monthly)*100).toFixed(0)+"%":"—"}</div>
-        <div class="fl-td" style="flex:0 0 44px">${num(m.calmar,2)}</div>
-        <div class="fl-td dim" style="flex:1;font-size:8px;overflow:hidden;text-overflow:ellipsis;min-width:0">${(m.run_label||"").slice(0,35)}</div>
+        <div class="fl-td ${obqCol}" style="flex:0 0 46px;font-weight:700;font-size:8px">${obq!=null?num(obq,3):"—"}</div>
+        <div class="fl-td ${(cagr||0)>=0?"g":"r"}" style="flex:0 0 50px">${pct(cagr,1)}</div>
+        <div class="fl-td r" style="flex:0 0 48px">${pct(m.max_dd,0)}</div>
+        <div class="fl-td" style="flex:0 0 40px">${num(m.equity_r2,3)}</div>
+        <div class="fl-td ${(m.alpha_vs_bm||0)>=0?"g":"r"}" style="flex:0 0 46px">${pct(m.alpha_vs_bm,1)}</div>
+        <div class="fl-td dim" style="flex:1;font-size:8px;overflow:hidden;text-overflow:ellipsis;min-width:0" title="${pmSid}">${dname}</div>
         <button
-          title="Send to Results tab"
-          onclick="event.stopPropagation();pmPromoteToResults('${pmSid}')"
-          style="flex:0 0 22px;width:22px;height:18px;margin:0 3px;padding:0;background:var(--accent2);color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:900;line-height:18px;text-align:center;align-self:center"
-        >+</button>
+          title="View tearsheet"
+          onclick="event.stopPropagation();"
+          style="flex:0 0 22px;width:22px;height:18px;margin:0 3px;padding:0;background:var(--accent2);color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:10px;font-weight:900;line-height:18px;text-align:center;align-self:center"
+        >&#9654;</button>
       `;
 
       tr.onclick = async () => {

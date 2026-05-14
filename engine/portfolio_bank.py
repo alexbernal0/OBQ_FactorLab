@@ -280,15 +280,20 @@ def get_all_portfolio_models(limit: int = 200) -> list:
     con = _get_bank()
     try:
         rows = con.execute(f"""
-            SELECT strategy_id, created_at::VARCHAR, run_label, score_column,
+            SELECT strategy_id, created_at::VARCHAR AS created_at, run_label, score_column,
                    top_n, sector_max, rebalance_freq, start_date, end_date, cap_tier,
                    cost_bps, stop_loss_pct, weight_scheme,
-                   cagr, sharpe, max_dd, calmar, sortino, ann_vol,
+                   cagr, sharpe, max_dd, calmar, calmar_gips, sortino, ann_vol,
                    win_rate_monthly, surefire_ratio, equity_r2,
                    alpha_vs_bm, beta_vs_bm, n_periods, elapsed_s,
+                   obq_port_score, display_name, benchmark,
+                   avg_ann_dd, up_capture, down_capture, iudr,
+                   port_ret_comp, port_cons_comp, port_smooth_comp,
+                   port_alpha_comp, port_dd_comp,
+                   spx_cagr, spx_max_dd, excess_cagr,
                    status, notes, tags
             FROM portfolio_models
-            ORDER BY created_at DESC NULLS LAST
+            ORDER BY COALESCE(obq_port_score, -999) DESC NULLS LAST, created_at DESC NULLS LAST
             LIMIT {limit}
         """).fetchdf()
         import math as _math
