@@ -268,7 +268,7 @@ if __name__ == "__main__":
     ap.add_argument("--dry-run",   action="store_true", help="3 factors, no save")
     ap.add_argument("--top-n",     type=int,   default=28,      help="Total stocks in portfolio")
     ap.add_argument("--tranches",  type=int,   default=4,       help="Number of tranches")
-    ap.add_argument("--hold",      type=int,   default=12,      help="Hold months per tranche")
+    ap.add_argument("--hold",      type=int,   default=3,       help="Quarterly return window (3mo) — data pack hold_months")
     ap.add_argument("--cost-bps",  type=float, default=15.0,    help="One-way cost bps")
     ap.add_argument("--start",     default=START_DATE)
     ap.add_argument("--end",       default=END_DATE)

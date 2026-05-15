@@ -355,7 +355,7 @@ def _load_base_universe(
             e.symbol,
             e.entry_month::VARCHAR          AS entry_month_str,
             e.market_cap,
-            (x.close_price / NULLIF(e.entry_close, 0) - 1 - 0.003) AS fwd_return
+            (x.close_price / NULLIF(e.entry_close, 0) - 1) AS fwd_return  -- gross return, no embedded cost
         FROM entry_prices e
         JOIN monthly_prices x
             ON  e.symbol     = x.symbol
