@@ -146,8 +146,13 @@ def _make_strategy_id(score_col: str, cfg: dict) -> str:
     return f"PM-{score_short}-{date_str}-{h4}"
 
 
-def save_portfolio_model(result: dict, overwrite: bool = True) -> str:
-    """Save a completed portfolio backtest. Returns strategy_id."""
+def save_portfolio_model(result: dict, overwrite: bool = True,
+                         con: "duckdb.DuckDBPyConnection | None" = None) -> str:
+    """Save a completed portfolio backtest. Returns strategy_id.
+    
+    If `con` is provided, uses that connection (caller manages commit/close).
+    Otherwise opens and closes its own connection.
+    """
     if result.get("status") != "complete":
         raise ValueError("Only 'complete' results can be saved")
 
@@ -241,7 +246,9 @@ def save_portfolio_model(result: dict, overwrite: bool = True) -> str:
         "tags":   "",
     }
 
-    con = _get_bank()
+    own_con = con is None
+    if own_con:
+        con = _get_bank()
     try:
         existing = con.execute(
             "SELECT strategy_id FROM portfolio_models WHERE strategy_id = ?",
@@ -260,7 +267,8 @@ def save_portfolio_model(result: dict, overwrite: bool = True) -> str:
             plh  = ", ".join("?" for _ in row)
             con.execute(f"INSERT INTO portfolio_models ({cols}) VALUES ({plh})", list(row.values()))
 
-        con.commit()
+        if own_con:
+            con.commit()
 
         # Also save to dedicated trade log DB
         trade_log = result.get("trade_log", [])
@@ -273,7 +281,8 @@ def save_portfolio_model(result: dict, overwrite: bool = True) -> str:
 
         return strategy_id
     finally:
-        con.close()
+        if own_con:
+            con.close()
 
 
 def get_all_portfolio_models(limit: int = 200) -> list:

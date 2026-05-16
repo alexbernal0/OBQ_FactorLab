@@ -236,6 +236,7 @@ def simulate_tranche_portfolio(
     # ── Per-tranche simulation ────────────────────────────────────────────────
     tranche_equity_curves = {}   # t_idx -> [float] length n_periods+1
     tranche_rebal_periods = {}   # t_idx -> [period_idx]
+    tranche_holdings_count = {}  # t_idx -> [int] length n_periods — actual stocks held
 
     for t_idx in range(1, n_tranches + 1):
         rebal_month = tranche_months[t_idx]
@@ -249,11 +250,11 @@ def simulate_tranche_portfolio(
         # Start equity at 1.0, simulate period-by-period
         eq = [1.0]
         prev_holdings = set()
+        holdings_per_period = []
 
         for i in range(n_periods):
             if i in rebal_periods:
                 # Rebalance: pick top per_tranche stocks for THIS tranche
-                # Each tranche gets a different slice of the top-N ranking:
                 #   Tranche 1: positions 0..6 (rank 1-7)
                 #   Tranche 2: positions 7..13 (rank 8-14)
                 #   Tranche 3: positions 14..20 (rank 15-21)
@@ -271,6 +272,8 @@ def simulate_tranche_portfolio(
                 prev_holdings = new_holdings
             else:
                 cost_drag = 0.0
+
+            holdings_per_period.append(len(prev_holdings))
 
             # Return for this period: equal-weight avg of holdings
             if prev_holdings:
@@ -291,6 +294,7 @@ def simulate_tranche_portfolio(
             eq.append(eq[-1] * (1.0 + period_ret))
 
         tranche_equity_curves[t_idx] = eq
+        tranche_holdings_count[t_idx] = holdings_per_period
 
     # ── Blend tranches into combined portfolio equity ─────────────────────────
     # At each period, blend equity values (equal weight across tranches)
@@ -367,6 +371,19 @@ def simulate_tranche_portfolio(
 
     elapsed = round(time.time() - t0, 2)
 
+    # ── Holdings coverage quality metrics ─────────────────────────────────────
+    # For each period, sum actual holdings across all tranches vs target
+    total_holdings_per_period = []
+    for i in range(n_periods):
+        total_held = sum(tranche_holdings_count[t][i] for t in range(1, n_tranches + 1))
+        total_holdings_per_period.append(total_held)
+
+    target_total = total_stocks  # 28
+    full_periods = sum(1 for h in total_holdings_per_period if h >= target_total)
+    min_holdings = min(total_holdings_per_period) if total_holdings_per_period else 0
+    avg_holdings = sum(total_holdings_per_period) / len(total_holdings_per_period) if total_holdings_per_period else 0
+    coverage_pct = full_periods / n_periods if n_periods > 0 else 0.0  # fraction of periods with full holdings
+
     return {
         "portfolio_equity":  [round(v, 6) for v in portfolio_equity],
         "equity_dates":      equity_dates,
@@ -374,6 +391,11 @@ def simulate_tranche_portfolio(
         "holdings_log":      holdings_log,
         "n_periods":         n_periods,
         "elapsed_s":         elapsed,
+        # Quality metrics
+        "coverage_pct":      round(coverage_pct, 4),   # 1.0 = full holdings every period
+        "min_holdings":      min_holdings,              # lowest actual holdings in any period
+        "avg_holdings":      round(avg_holdings, 1),    # average holdings across all periods
+        "full_periods":      full_periods,              # periods with >= target_total stocks
     }
 
 
@@ -475,6 +497,9 @@ def run_portfolio_batch_gpu(
     cost_bps:       float = 15.0,
     start_date:     str   = "1995-03-31",
     end_date:       str   = "2024-12-31",
+    cap_tier:       str   = "All_Cap",
+    cap_mask_gpu:   Optional["cp.ndarray"] = None,
+    cycle_tag:      str   = "CYC-008-PM",
     save:           bool  = True,
     overwrite:      bool  = True,
     cb = None,
@@ -521,13 +546,31 @@ def run_portfolio_batch_gpu(
         score_col    = cfg["score_column"]
         lower_better = cfg.get("lower_better", False)
         display_name = cfg.get("display_name", score_col)
-        cap_mask_gpu = cfg.get("cap_mask_gpu", None)
+        # Per-factor cap mask overrides batch-level cap_mask_gpu
+        job_cap_mask = cfg.get("cap_mask_gpu", None) or cap_mask_gpu
 
         if score_col not in pack.score_columns:
             _cb(f"  [{job_num}/{len(factor_configs)}] SKIP {score_col} — not in VRAM")
             continue
 
         scores_gpu = pack.score_columns[score_col]
+
+        # ── Pre-flight: check score coverage vs top_n requirement ──────────────
+        if job_cap_mask is not None:
+            eff_valid = pack.valid_gpu & job_cap_mask & ~cp.isnan(scores_gpu)
+        else:
+            eff_valid = pack.valid_gpu & ~cp.isnan(scores_gpu)
+        nv_per_period = cp.asnumpy(eff_valid.sum(axis=1))
+        full_periods = int((nv_per_period >= top_n).sum())
+        coverage_ratio = full_periods / len(nv_per_period) if len(nv_per_period) > 0 else 0
+        min_valid = int(nv_per_period.min())
+
+        if coverage_ratio < 0.10:
+            # Hard reject: factor has almost no valid scores (like cyc4_eps_stability)
+            _cb(f"  [{job_num}/{len(factor_configs)}] SKIP {score_col} — "
+                f"only {full_periods}/{len(nv_per_period)} periods have >={top_n} stocks "
+                f"(min={min_valid}, coverage={coverage_ratio:.0%}) — insufficient data")
+            continue
 
         # ── Step 1: GPU top-N selection ────────────────────────────────────────
         t_gpu = time.perf_counter()
@@ -536,7 +579,7 @@ def run_portfolio_batch_gpu(
             valid_gpu=pack.valid_gpu,
             top_n=top_n,
             lower_better=lower_better,
-            cap_mask_gpu=cap_mask_gpu,
+            cap_mask_gpu=job_cap_mask,
         )
         cp.cuda.Stream.null.synchronize()
         gpu_ms = round((time.perf_counter() - t_gpu) * 1000, 1)
@@ -642,7 +685,7 @@ def run_portfolio_batch_gpu(
         # Accurate run_label — factor name | config | cycle tag
         run_label = (
             f"{display_name} | Top-{top_n} | {n_tranches}T-Qtrly | Equal-Wt | "
-            f"All-Cap | {start_date[:4]}-{end_date[:4]} [CYC-008-PM]"
+            f"{cap_tier} | {start_date[:4]}-{end_date[:4]} [{cycle_tag}]"
         )
 
         result = {
@@ -661,7 +704,7 @@ def run_portfolio_batch_gpu(
                 "hold_months":     hold_months,
                 "start_date":      start_date,
                 "end_date":        end_date,
-                "cap_tier":        "all",
+                "cap_tier":        cap_tier,
                 "cost_bps":        cost_bps,
                 "stop_loss_pct":   0.0,
                 "weight_scheme":   "equal",
@@ -682,6 +725,11 @@ def run_portfolio_batch_gpu(
             "n_periods":          sim["n_periods"],
             "elapsed_s":          round(time.time() - t_start, 1),
             "elapsed_gpu_ms":     gpu_ms,
+            # Holdings coverage quality
+            "coverage_pct":       sim.get("coverage_pct", 0),
+            "min_holdings":       sim.get("min_holdings", 0),
+            "avg_holdings":       sim.get("avg_holdings", 0),
+            "full_periods":       sim.get("full_periods", 0),
             # OBQ Port Score — filled in post-batch after percentile rank computed
             "obq_port_score":     None,
             "port_components":    None,
@@ -690,12 +738,15 @@ def run_portfolio_batch_gpu(
         results.append(result)
 
         pm = portfolio_metrics
+        cov = sim.get("coverage_pct", 0)
+        cov_flag = "" if cov >= 1.0 else f" COV={cov:.0%}"
         _cb(
             f"  [{job_num}/{len(factor_configs)}] {score_col} | "
             f"CAGR={pm.get('cagr',0)*100:.1f}% | "
             f"Calmar={pm.get('calmar_gips',0):.2f} | "
             f"MaxDD={pm.get('max_dd',0)*100:.1f}% | "
-            f"GPU={gpu_ms}ms"
+            f"Avg={sim.get('avg_holdings',0):.0f}/{total_stocks} stocks | "
+            f"GPU={gpu_ms}ms{cov_flag}"
         )
 
     # ── Post-batch: OBQ Port Score (needs full batch for percentile DD) ────────
@@ -712,17 +763,22 @@ def run_portfolio_batch_gpu(
         # Add individual components to portfolio_metrics for easy DB storage
         result["portfolio_metrics"].update(components)
 
-    # ── Save to portfolio bank ─────────────────────────────────────────────────
+    # ── Save to portfolio bank (batch mode — single connection) ──────────────
     if save:
         _cb(f"Saving {len(results)} portfolio models to bank...")
-        from engine.portfolio_bank import save_portfolio_model
+        from engine.portfolio_bank import save_portfolio_model, _get_bank
         saved = 0
-        for result in results:
-            try:
-                save_portfolio_model(result, overwrite=overwrite)
-                saved += 1
-            except Exception as e:
-                _cb(f"  Save error for {result.get('score_column')}: {e}")
+        con = _get_bank()
+        try:
+            for result in results:
+                try:
+                    save_portfolio_model(result, overwrite=overwrite, con=con)
+                    saved += 1
+                except Exception as e:
+                    _cb(f"  Save error for {result.get('score_column')}: {e}")
+            con.commit()
+        finally:
+            con.close()
         _cb(f"  Saved {saved}/{len(results)}")
 
     total_s = round(time.time() - t_start, 1)

@@ -946,6 +946,27 @@
     else                       _pmSetStatus("Snap failed");
   };
 
+  // ── Portfolio Strategy Log sort ────────────────────────────────────────────
+  let _pmSortCol = 'obq_port_score';
+  let _pmSortAsc = false;  // default desc for scores
+
+  window.pmSortBank = function (col) {
+    // Toggle direction if same column clicked again
+    if (_pmSortCol === col) {
+      _pmSortAsc = !_pmSortAsc;
+    } else {
+      _pmSortCol = col;
+      // Default direction: desc for numbers, asc for text
+      _pmSortAsc = (col === 'display_name');
+    }
+    // Update sort arrows
+    document.querySelectorAll('[id^="pm-sort-"]').forEach(el => el.textContent = '');
+    const arrow = document.getElementById('pm-sort-' + col);
+    if (arrow) arrow.textContent = _pmSortAsc ? '▲' : '▼';
+    // Re-render
+    pmLoadBank();
+  };
+
   // ── Bank load ─────────────────────────────────────────────────────────────
   // Reads from server-injected window.__PM_BANK__ (zero network round-trip).
   // Falls back to fetch() if the global isn't present.
@@ -964,19 +985,10 @@
       models = r.models || [];
     }
 
-    // Show CYC-008 records; hide old pre-CYC-008 legacy models
-    const CYC_START = '2026-05-07';
-    const display = models.filter(m =>
-      (m.run_label || '').includes('CYC-008') ||
-      (m.created_at || '').slice(0,10) >= '2026-05-14'
-    );
-    const legacy = models.filter(m =>
-      !(m.run_label || '').includes('CYC-008') &&
-      (m.created_at || '').slice(0,10) < CYC_START
-    );
+    // Show all portfolio models (no legacy filtering)
+    const display = models;
 
-    if (count) count.textContent = (display.length || "No") + " portfolio models" +
-      (legacy.length > 0 ? " · " + legacy.length + " legacy hidden" : "");
+    if (count) count.textContent = (display.length || "No") + " portfolio models";
 
     if (!display.length) {
       body.innerHTML = "";
@@ -989,8 +1001,24 @@
     function pct(v,d=2) { if(v==null||isNaN(v)) return "—"; return ((v*100)>=0?"+":"")+(v*100).toFixed(d)+"%"; }
     function num(v,d=2) { if(v==null||isNaN(v)) return "—"; return Number(v).toFixed(d); }
 
-    // Sort by OBQ Port Score desc by default
-    const sorted = [...display].sort((a,b) => (b.obq_port_score||0) - (a.obq_port_score||0));
+    // Sort by active column
+    const sorted = [...display].sort((a, b) => {
+      let va = a[_pmSortCol], vb = b[_pmSortCol];
+      // Text sort for display_name / score_column
+      if (_pmSortCol === 'display_name' || _pmSortCol === 'score_column') {
+        va = (va || '').toLowerCase();
+        vb = (vb || '').toLowerCase();
+        return _pmSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+      }
+      // Numeric sort — nulls to bottom
+      va = (va == null || isNaN(va)) ? -Infinity : va;
+      vb = (vb == null || isNaN(vb)) ? -Infinity : vb;
+      return _pmSortAsc ? va - vb : vb - va;
+    });
+
+    // Set initial sort arrow on first load
+    const activeArrow = document.getElementById('pm-sort-' + _pmSortCol);
+    if (activeArrow && !activeArrow.textContent) activeArrow.textContent = _pmSortAsc ? '▲' : '▼';
 
     sorted.forEach(m => {
       const tr = document.createElement("div");
@@ -1001,12 +1029,16 @@
 
       const pmSid  = m.strategy_id || "";
       const dname  = m.display_name || m.score_column || "";
+      const capTier = m.cap_tier || "all";
+      const capShort = capTier.replace('_Cap','').replace('_cap','');
+      const capColor = {'Small':'#f59e0b','Mid':'#16a34a','Large':'#3b82f6','Mega':'#7c3aed','All':'var(--text-dim)','all':'var(--text-dim)'}[capShort] || 'var(--text-dim)';
       tr.innerHTML = `
         <div class="fl-td ${obqCol}" style="flex:0 0 46px;font-weight:700;font-size:8px">${obq!=null?num(obq,3):"—"}</div>
         <div class="fl-td ${(cagr||0)>=0?"g":"r"}" style="flex:0 0 50px">${pct(cagr,1)}</div>
         <div class="fl-td r" style="flex:0 0 48px">${pct(m.max_dd,0)}</div>
         <div class="fl-td" style="flex:0 0 40px">${num(m.equity_r2,3)}</div>
         <div class="fl-td ${(m.alpha_vs_bm||0)>=0?"g":"r"}" style="flex:0 0 46px">${pct(m.alpha_vs_bm,1)}</div>
+        <div class="fl-td" style="flex:0 0 62px;font-size:7px;font-weight:700;color:${capColor}" title="${pmSid}">${capShort}</div>
         <div class="fl-td dim" style="flex:1;font-size:8px;overflow:hidden;text-overflow:ellipsis;min-width:0" title="${pmSid}">${dname}</div>
         <button
           title="View tearsheet"

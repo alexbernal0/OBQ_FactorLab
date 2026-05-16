@@ -406,24 +406,6 @@
         </div>
       </div>
 
-      <!-- ══ THIS SESSION RUNS ═════════════════════════════════════ -->
-      <div style="flex-shrink:0;display:flex;flex-direction:column">
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 10px;background:var(--bg-panel2);border-bottom:1px solid var(--border);flex-shrink:0">
-          <span style="font-size:8px;font-weight:700;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase">RESEARCH CYCLES</span>
-        </div>
-        <div class="fl-tbl-header">
-          <div class="fl-th" style="flex:0 0 60px">CAGR</div>
-          <div class="fl-th" style="flex:0 0 46px">SHARPE</div>
-          <div class="fl-th" style="flex:0 0 55px">MAX DD</div>
-          <div class="fl-th" style="flex:0 0 46px">WIN%</div>
-          <div class="fl-th" style="flex:0 0 46px">CALM</div>
-          <div class="fl-th" style="flex:1">LABEL</div>
-        </div>
-        <div class="fl-tbl-body" id="pm-tbl-body" style="max-height:120px;min-height:40px">
-          <div class="log-empty" id="pm-tbl-empty">No runs yet — click RUN PORTFOLIO</div>
-        </div>
-      </div>
-
       <!-- ══ STRATEGY LOG ══════════════════════════════════════════ -->
       <div style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
         <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:var(--bg-panel2);border-top:2px solid var(--border);flex-shrink:0">
@@ -434,12 +416,13 @@
           </div>
         </div>
         <div class="fl-tbl-header" style="background:var(--bg-panel2)">
-          <div class="fl-th" style="flex:0 0 46px;font-size:7.5px" title="OBQ Port Score">OBQ PT</div>
-          <div class="fl-th" style="flex:0 0 50px;font-size:7.5px" title="CAGR vs SPX">CAGR</div>
-          <div class="fl-th" style="flex:0 0 48px;font-size:7.5px" title="Max Drawdown">MAX DD</div>
-          <div class="fl-th" style="flex:0 0 40px;font-size:7.5px" title="Equity R²">R²</div>
-          <div class="fl-th" style="flex:0 0 46px;font-size:7.5px" title="Alpha vs SPX">ALPHA</div>
-          <div class="fl-th" style="flex:1;font-size:7.5px">FACTOR</div>
+          <div class="fl-th" style="flex:0 0 46px;font-size:7.5px" onclick="pmSortBank('obq_port_score')" title="OBQ Port Score">OBQ PT <span class="fl-sort-arrow" id="pm-sort-obq_port_score"></span></div>
+          <div class="fl-th" style="flex:0 0 50px;font-size:7.5px" onclick="pmSortBank('cagr')" title="CAGR vs SPX">CAGR <span class="fl-sort-arrow" id="pm-sort-cagr"></span></div>
+          <div class="fl-th" style="flex:0 0 48px;font-size:7.5px" onclick="pmSortBank('max_dd')" title="Max Drawdown">MAX DD <span class="fl-sort-arrow" id="pm-sort-max_dd"></span></div>
+          <div class="fl-th" style="flex:0 0 40px;font-size:7.5px" onclick="pmSortBank('equity_r2')" title="Equity R²">R² <span class="fl-sort-arrow" id="pm-sort-equity_r2"></span></div>
+          <div class="fl-th" style="flex:0 0 46px;font-size:7.5px" onclick="pmSortBank('alpha_vs_bm')" title="Alpha vs SPX">ALPHA <span class="fl-sort-arrow" id="pm-sort-alpha_vs_bm"></span></div>
+          <div class="fl-th" style="flex:0 0 62px;font-size:7.5px" onclick="pmSortBank('cap_tier')" title="Cap Tier">CAP <span class="fl-sort-arrow" id="pm-sort-cap_tier"></span></div>
+          <div class="fl-th" style="flex:1;font-size:7.5px" onclick="pmSortBank('display_name')" title="Sort by factor name">FACTOR <span class="fl-sort-arrow" id="pm-sort-display_name"></span></div>
           <div class="fl-th" style="flex:0 0 22px;font-size:7.5px"></div>
         </div>
         <div class="fl-tbl-body" id="pm-bank-body" style="flex:1">

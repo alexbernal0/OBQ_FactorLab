@@ -211,6 +211,56 @@ class GPUDataPack:
         lo, hi = CAP_RANGES.get(tier, (0, 9e18))
         return (self.market_cap_gpu >= lo) & (self.market_cap_gpu <= hi)
 
+    def cap_quartile_masks(self) -> dict[str, "cp.ndarray"]:
+        """
+        Point-in-time market cap quartile masks (CYC-009).
+
+        For each period, compute quartile breakpoints from the VALID stocks
+        in that period (market_cap > 0 and valid_gpu True). This adapts
+        naturally to market cap inflation over 30 years.
+
+        Returns dict of 4 masks:
+            'Small_Cap'  → bottom quartile (Q1: 0–25th percentile)
+            'Mid_Cap'    → second quartile (Q2: 25–50th percentile)
+            'Large_Cap'  → third quartile  (Q3: 50–75th percentile)
+            'Mega_Cap'   → top quartile    (Q4: 75–100th percentile)
+
+        Each mask is cp.ndarray (n_periods, max_stocks) bool.
+        """
+        mc = self.market_cap_gpu                       # (n_periods, max_stocks)
+        valid = self.valid_gpu & (mc > 0)              # only stocks with real cap data
+        n_periods, max_stocks = mc.shape
+
+        # Compute per-period quartile thresholds on CPU (percentile not easy on GPU)
+        mc_cpu = cp.asnumpy(mc)
+        valid_cpu = cp.asnumpy(valid)
+
+        q25 = np.zeros(n_periods)
+        q50 = np.zeros(n_periods)
+        q75 = np.zeros(n_periods)
+
+        for i in range(n_periods):
+            caps = mc_cpu[i][valid_cpu[i]]
+            if len(caps) < 4:
+                # Not enough stocks — set thresholds to include everything in Mega
+                q25[i] = q50[i] = q75[i] = 0.0
+            else:
+                q25[i] = np.percentile(caps, 25)
+                q50[i] = np.percentile(caps, 50)
+                q75[i] = np.percentile(caps, 75)
+
+        # Broadcast thresholds back to GPU
+        q25_gpu = cp.asarray(q25).reshape(-1, 1)  # (n_periods, 1)
+        q50_gpu = cp.asarray(q50).reshape(-1, 1)
+        q75_gpu = cp.asarray(q75).reshape(-1, 1)
+
+        return {
+            'Small_Cap': valid & (mc >= 0)     & (mc < q25_gpu),
+            'Mid_Cap':   valid & (mc >= q25_gpu) & (mc < q50_gpu),
+            'Large_Cap': valid & (mc >= q50_gpu) & (mc < q75_gpu),
+            'Mega_Cap':  valid & (mc >= q75_gpu),
+        }
+
     def gpu_status(self) -> str:
         dev = cp.cuda.Device()
         free, total = dev.mem_info
